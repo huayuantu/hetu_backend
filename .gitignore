@@ -279,3 +279,5 @@ deploy/supervisor/supervisord.conf
 deploy/uploads
 .pytest_cache/
 resource/
+
+.vscode
