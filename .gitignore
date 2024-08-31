@@ -280,4 +280,4 @@ deploy/uploads
 .pytest_cache/
 resource/
 
-.vscode
+.vscode/

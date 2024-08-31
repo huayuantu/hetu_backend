@@ -25,6 +25,7 @@ oss2 = "^2.18.3"
 gunicorn = "^21.2.0"
 
 
+paho-mqtt = "^2.1.0"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

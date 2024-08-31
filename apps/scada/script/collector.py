@@ -6,8 +6,9 @@ import threading
 from wsgiref.simple_server import WSGIRequestHandler, make_server
 
 import click
-from prometheus_client import CollectorRegistry, make_wsgi_app, start_wsgi_server
+from prometheus_client import CollectorRegistry, make_wsgi_app
 from prometheus_client.core import GaugeMetricFamily
+from prometheus_client.registry import Collector
 
 from apps.scada.utils.grm.client import GrmClient, GrmError
 
@@ -20,17 +21,19 @@ server_handler = logging.StreamHandler(stream=sys.stderr)
 server_handler.setLevel(logging.ERROR)
 logger.addHandler(server_handler)
 
+
 class InfoFilter(logging.Filter):
     def filter(self, record):
         return record.levelno == logging.INFO  # 仅允许 INFO 级别的记录通过
-    
+
+
 info_handler = logging.StreamHandler(stream=sys.stdout)
 info_handler.setLevel(logging.INFO)
 info_handler.addFilter(InfoFilter())
 logger.addHandler(info_handler)
 
 
-class GrmCollector(object):
+class GrmCollector(Collector):
     def __init__(self, module_number, module_secret, module_url):
         self._client = GrmClient(module_number, module_secret, module_url)
         self._module_url = module_url
@@ -49,6 +52,10 @@ class GrmCollector(object):
             logger.error(f"读取GRM模块数据错误 {e.message}")
             raise StopIteration()
 
+        if self._client.token is None:
+            logger.error("GRM模块未登录")
+            raise StopIteration()
+        
         # 构建指标
         g = GaugeMetricFamily(
             f"grm_{self._client.token.id}_gauge",
