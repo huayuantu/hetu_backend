@@ -34,10 +34,13 @@ class GrmClient:
         self._module_url = module_url
         self._timeout = timeout
         self._reconnect = reconnect
-        self._module_token: GrmModuleToken = None
+        self._module_token: GrmModuleToken | None = None
 
     def _exdata(self, data: str, op: str) -> list[str]:
         """GRM数据获取接口"""
+
+        if not self._module_token:
+            raise GrmError(-1, "未登录")
 
         token = self._module_token
         url = f"http://{token.data_url}/exdata?SID={token.sid}&OP={op}"
@@ -50,7 +53,7 @@ class GrmClient:
         )
         if resp.status_code != 200:
             raise GrmError(resp.status_code, "HTTP连接错误")
-        
+
         results = resp.text.split("\r\n")
 
         if results[0] == "OK":
@@ -87,10 +90,12 @@ class GrmClient:
             raise GrmError(-1, "未知错误")
 
     @property
-    def token(self):
+    def token(self) -> GrmModuleToken | None:
         return self._module_token
 
-    def connect(self, token: GrmModuleToken = None, force=False) -> GrmModuleToken:
+    def connect(
+        self, token: GrmModuleToken | None = None, force=False
+    ) -> GrmModuleToken:
         """连接到模块数据
         1、SID对于每个模块有最大数量限制
         2、SID不活跃10分钟会自动过期
@@ -107,8 +112,9 @@ class GrmClient:
             # 获取新的Token
             return self._exlogon()
 
+    @staticmethod
     def _with_reconnect(fn):
-        """自动重连装饰器，用于返回错误8的时候重新连接"""
+        """自动重连装饰器用于返回错误8的时候重新连接"""
 
         def wrapper(self, *args, **kwargs):
             if self._reconnect:
