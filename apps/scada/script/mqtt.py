@@ -58,24 +58,36 @@ class GrmMqttService(BaseModel):
 
             if topic.startswith(self._topic_root):
                 variable_path = topic[len(self._topic_root) :]
-                if "/" in variable_path:
-                    group, variable_name = variable_path.split("/")
+                if "#" in variable_path:
+                    variables = self._grm.enumerate()
+                    break
                 else:
-                    group = ""
-                    variable_name = variable_path
-                grm_var = GrmVariable(
-                    module_number=self.module_number,
-                    name=variable_name,
-                    group=group,
-                    type="F",
-                    rw=False,
-                    priority=0,
-                    desc="",
-                    value=0.0,
-                    write_error=0,
-                    read_error=0,
-                )
-                variables.append(grm_var)
+                    path = variable_path.split("/")
+                    match path:
+                        case [variable_name]:
+                            group = ""
+                        case [group, variable_name]:
+                            pass
+                        case [_, _, "error"]:
+                            continue
+                        case _:
+                            logger.error(f"Invalid topic: {topic}")
+                            continue
+
+                    grm_var = GrmVariable(
+                        module_number=self.module_number,
+                        name=variable_name,
+                        group=group,
+                        type="F",
+                        rw=False,
+                        priority=0,
+                        desc="",
+                        value=0.0,
+                        write_error=0,
+                        read_error=0,
+                    )
+                    variables.append(grm_var)
+
         return variables
 
     def _read_and_publish(self):
@@ -86,14 +98,14 @@ class GrmMqttService(BaseModel):
             self._grm.read(variables)
 
             for v in variables:
-                if v.read_error:
-                    logger.error(f"Error reading variable {v.name}: {v.read_error}")
-                    continue
                 if len(v.group) > 0:
                     topic = f"{self._topic_root}{v.group}/{v.name}"
                 else:
                     topic = f"{self._topic_root}{v.name}"
-                self._mqtt.publish(topic, v.value)
+                if v.read_error != 0:
+                    self._mqtt.publish(f"{topic}/error", v.read_error)
+                else:
+                    self._mqtt.publish(topic, v.value)
 
         except Exception as e:
             logger.error(f"Error reading from GRM client or publishing to MQTT: {e}")
@@ -120,7 +132,7 @@ class GrmMqttService(BaseModel):
         self._subscribed_vars: list[GrmVariable] = []
 
         # 连接MQTT
-        client = mqtt.Client()
+        client = mqtt.Client()  # type: ignore
         client.on_connect = self._on_connect
         client.on_disconnect = self._on_disconnect
         client.on_message = self._on_message
@@ -151,8 +163,8 @@ class GrmMqttService(BaseModel):
 
     def _on_message(self, client: mqtt.Client, userdata: Any, msg: mqtt.MQTTMessage):
         try:
-            value = float(msg.payload.decode())
             if msg.topic.startswith(self._command_root):
+                value = float(msg.payload.decode())
                 variable_path = msg.topic[len(self._command_root) :]
                 if "/" in variable_path:
                     group, variable_name = variable_path.split("/")
@@ -238,9 +250,17 @@ class GrmMqttService(BaseModel):
     type=str,
     help="Module URL",
 )
+@click.option(
+    "--freq",
+    envvar="FREQ",
+    type=int,
+    default=3,
+    help="Frequency of reading and publishing data",
+)
 def main(
     broker: str,
     port: int,
+    freq: int,
     manager_port: int,
     manager_username: str,
     manager_secret: str,
@@ -251,6 +271,7 @@ def main(
     service = GrmMqttService(
         broker=broker,
         port=port,
+        freq=freq,
         manager_port=manager_port,
         manager_username=manager_username,
         manager_secret=manager_secret,
