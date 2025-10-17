@@ -1,17 +1,17 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
+from casbin_adapter.enforcer import enforcer
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from ninja import Router
-from casbin_adapter.enforcer import enforcer
 
 from apps.sys.models import Department, User
 from apps.sys.schemas import (
     UserBase,
     UserCreateIn,
     UserCreateOut,
-    UserLoginInfoOut,
     UserListOut,
+    UserLoginInfoOut,
     UserPasswordIn,
     UserUpdateIn,
 )
@@ -33,7 +33,7 @@ def create_user(request, payload: UserCreateIn):
 
     payload.password = get_password(payload.password)
     u = User(
-        create_time=datetime.now(timezone.utc),
+        create_time=datetime.now(UTC),
         **payload.dict(exclude={"role_ids": True}),
     )
     u.save()
@@ -48,10 +48,10 @@ def create_user(request, payload: UserCreateIn):
 
     base = UserBase.from_orm(u)
     out = UserCreateOut(
-        id=u.id,
+        id=u.pk,
         username=u.username,
-        dept_id=u.dept_id,
-        role_ids=[r.id for r in u.roles.all()],
+        dept_id=u.dept.pk,
+        role_ids=[r.pk for r in u.roles.all()],
         **base.dict(),
     )
     return out
@@ -64,7 +64,7 @@ def get_all_subdepartments(dept_id):
     subdepartments = Department.objects.filter(parent_id=dept_id)
 
     for subdept in subdepartments:
-        department_ids.extend(get_all_subdepartments(subdept.id))
+        department_ids.extend(get_all_subdepartments(subdept.pk))
 
     return department_ids
 
@@ -76,7 +76,10 @@ def get_all_subdepartments(dept_id):
 )
 @api_paginate
 def get_user_list(
-    request, keywords: str = None, status: int = None, dept_id: int = None
+    request,
+    keywords: str | None = None,
+    status: int | None = None,
+    dept_id: int | None = None,
 ):
     """获取用户列表"""
 
@@ -86,7 +89,7 @@ def get_user_list(
 
     if keywords:
         users = users.filter(
-            Q(name__icontains=keywords)
+            Q(name__icontains=keywords)  # pyright: ignore[reportOperatorIssue]
             | Q(nickname__icontains=keywords)
             | Q(mobile__icontains=keywords)
         )
@@ -105,7 +108,7 @@ def get_user_list(
         base = UserBase.from_orm(u)
         user_list.append(
             UserListOut(
-                id=u.id,
+                id=u.pk,
                 username=u.username,
                 role_names=[r.name for r in u.roles.all()],
                 dept_name=u.dept.name,
@@ -142,7 +145,7 @@ def get_user_login_info(request):
     perms = list(set(perms))
 
     return UserLoginInfoOut(
-        id=me.id,
+        id=me.pk,
         nickname=me.nickname,
         avatar=me.avatar,
         role_names=[r.code for r in me.roles.all()],
@@ -168,10 +171,10 @@ def get_user_info(request, user_id: int):
 
     base = UserBase.from_orm(u)
     out = UserCreateOut(
-        id=u.id,
+        id=u.pk,
         username=u.username,
-        dept_id=u.dept_id,
-        role_ids=[r.id for r in u.roles.all()],
+        dept_id=u.dept.pk,
+        role_ids=[r.pk for r in u.roles.all()],
         **base.dict(),
     )
     return out
@@ -194,10 +197,10 @@ def update_user_info(request, user_id: int, payload: UserUpdateIn):
 
     base = UserBase.from_orm(u)
     out = UserCreateOut(
-        id=u.id,
+        id=u.pk,
         username=u.username,
-        dept_id=u.dept_id,
-        role_ids=[r.id for r in u.roles.all()],
+        dept_id=u.dept.pk,
+        role_ids=[r.pk for r in u.roles.all()],
         **base.dict(),
     )
     return out

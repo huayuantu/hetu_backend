@@ -1,21 +1,21 @@
 import imghdr
 import mimetypes
 import os
+
 from django.conf import settings
 from django.http import HttpResponse
-
 from ninja import File, Router
 from ninja.errors import HttpError
 from ninja.files import UploadedFile
-from apps.sys.schemas import ResourceOut
-from utils.schema.base import api_schema
 from oss2 import (
     Bucket,
-    ProviderAuth,
     ObjectIterator,
+    ProviderAuth,
 )
 from oss2.credentials import EnvironmentVariableCredentialsProvider
 
+from apps.sys.schemas import ResourceOut
+from utils.schema.base import api_schema
 
 # Get Aliyun OSS credentials from environment variables
 auth = ProviderAuth(EnvironmentVariableCredentialsProvider())
@@ -57,7 +57,7 @@ def get_static_resource(request, resource: str, file_name: str):
 def upload_file(request, resource_prefix: str, file: UploadedFile = File(...)):
     """处理图片上传"""
 
-    if file.size > 10 * 1024 * 1024:
+    if file.size and file.size > 10 * 1024 * 1024:
         raise HttpError(400, "File size should not exceed 10MB.")
 
     # 检查图片合法性

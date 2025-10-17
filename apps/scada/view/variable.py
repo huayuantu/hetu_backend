@@ -1,9 +1,13 @@
+import logging
+import threading
+import time
 from datetime import datetime, timedelta
+
 import requests
 from django.conf import settings
-from django.db.models import Q, F
+from django.db.models import F, Q
 from django.shortcuts import get_object_or_404
-from ninja import Query, Router
+from ninja import Router
 from ninja.errors import HttpError
 from prometheus_client import (
     CollectorRegistry,
@@ -15,10 +19,10 @@ from prometheus_client import (
 from apps.scada.models import Module, Variable
 from apps.scada.schema.variable import (
     ReadValueIn,
+    ReadValueOut,
     VariableIn,
     VariableOptionOut,
     VariableOut,
-    ReadValueOut,
     VariableUpdateIn,
     WriteValueIn,
     WriteValueOut,
@@ -35,6 +39,7 @@ from utils.schema.base import api_schema
 from utils.schema.paginate import api_paginate
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 
 @router.get(
@@ -73,9 +78,9 @@ def read_range(
     try:
         result = promql_query_range(query_str, offset - duration_seconds, offset, step)
     except PrometheusQueryError as e:
-        raise HttpError(500, f"Prometheus Query Error: {e}")
+        raise HttpError(500, f"Prometheus Query Error: {e}") from e
     except requests.RequestException as e:
-        raise HttpError(500, f"Request Error: {e}")
+        raise HttpError(500, f"Request Error: {e}") from e
 
     # 格式参考 https://prometheus.io/docs/prometheus/latest/querying/api/#range-vectors
     values: list[ReadValueOut.Value] = []
@@ -128,9 +133,9 @@ def read_values(
         try:
             query_data = promql_query(query_str)
         except PrometheusQueryError as e:
-            raise HttpError(500, f"Prometheus Query Error: {e}")
+            raise HttpError(500, f"Prometheus Query Error: {e}") from e
         except requests.RequestException as e:
-            raise HttpError(500, f"Request Error: {e}")
+            raise HttpError(500, f"Request Error: {e}") from e
 
         # 构建输出结构
         for v in vars:
@@ -252,6 +257,7 @@ def update_variable(
     )
     v.type = payload.type
     v.rw = payload.rw
+    v.pulse = payload.pulse
     v.details = payload.details
     v.save()
     v.site_id = site_id
@@ -267,7 +273,7 @@ def write_local_var(variable: Variable, payload: WriteValueIn):
     # 创建一个 Gauge 指标
     gauge = Gauge(
         f"grm_{variable.module.module_number}_gauge",
-        variable.details,
+        str(variable.details),
         registry=registry,
     )
 
@@ -335,14 +341,46 @@ def update_variable_values(
                 # 写远程GRM设备
                 client.write(grm_write_list)
                 out.error = grm_write_list[0].write_error
-            except:
+            except Exception:
                 out.error = 503
         else:
             # 本地pushgateway变量
             try:
                 write_local_var(var, p)
-            except Exception as e:
+            except Exception:
                 out.error = 503
+
+        # 若为脉冲变量且本次写入成功（仅远程变量），则2秒后回落为0
+        if out.error == 0 and var and var.pulse and not var.local:
+            def _reset_to_zero(
+                _module=var.module,
+                _type=var.type,
+                _name=var.name,
+                _group=var.group,
+            ):
+                try:
+                    time.sleep(2)
+                    # 直接写入远程GRM为0（不再查询数据库，也不处理本地变量）
+                    client0 = get_grm_client(_module)
+                    grm_write_list0 = [
+                        GrmVariable(
+                            module_number=_module.module_number,
+                            type=_type,
+                            name=_name,
+                            value=0.0,
+                            group=_group,
+                        )
+                    ]
+                    client0.write(grm_write_list0)
+                except Exception:
+                    logger.exception(
+                        "Pulse zero-reset task failed: module=%s name=%s",
+                        _module.module_number,
+                        _name,
+                    )
+
+            t = threading.Thread(target=_reset_to_zero, daemon=True)
+            t.start()
 
         outlist.append(out)
 

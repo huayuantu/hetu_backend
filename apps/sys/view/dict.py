@@ -1,5 +1,4 @@
 from django.db.models import Q
-from django.http import Http404
 from django.shortcuts import get_object_or_404
 from ninja import Router
 
@@ -38,7 +37,7 @@ def create_dicttype(request, payload: DictTypeIn):
     auth=AuthBearer([("sys:dict_type:edit", "x")]),
 )
 @api_paginate
-def list_dicttype(request, keywords: str = None):
+def list_dicttype(request, keywords: str | None = None):
     """获取字典类型列表"""
 
     dts = DictType.objects.all()
@@ -113,7 +112,7 @@ def create_dictdata(request, payload: DictDataIn):
     auth=AuthBearer([("sys:dict:edit", "x")]),
 )
 @api_paginate
-def get_dictdata_list(request, type_code: str = None, keywords: str = None):
+def get_dictdata_list(request, type_code: str | None = None, keywords: str | None = None):
     """获取字典数据列表"""
 
     dds = DictData.objects.all()

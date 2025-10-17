@@ -1,0 +1,55 @@
+@base_url = https://api-ivm.myhuaweicloud.com
+@user_id = {{$dotenv IVM_USER_ID}}
+@access_key = {{$dotenv IVM_ACCESS_KEY}}
+@secret_key = {{$dotenv IVM_SECRET_KEY}}
+
+###
+# @name getAccessToken
+# 获取访问TOKEN
+POST {{base_url}}/v2/{{user_id}}/enterprises/access-token
+Content-Type: application/json
+
+{
+    "ak": "{{access_key}}",
+    "sk": "{{secret_key}}",
+    "force_update": true
+}
+
+###
+# @name getDevices
+# 获取设备列表
+GET {{base_url}}/v1/{{user_id}}/devices
+Access-Token: {{getAccessToken.response.body.access_token}}
+
+###
+# @name getChannels
+# 查询通道
+GET {{base_url}}/v1/{{user_id}}/channels
+Access-Token: {{getAccessToken.response.body.access_token}}
+
+{
+    "device_id": "{{getDevices.response.body.devices[0].device_id}}",
+}
+
+
+###
+# 获取实况播放地址 (选择特定索引版本)
+# @name getLiveConnections
+POST {{base_url}}/v2/{{user_id}}/devices/channels/media/live-connections
+Content-Type: application/json
+Access-Token: {{getAccessToken.response.body.access_token}}
+
+{
+    "channels": [{
+        "device_id": "{{getDevices.response.body.devices[0].device_id}}",
+        "channel_id": "{{getChannels.response.body.channels[0].channel_id}}",
+        "live_protocol": "HTTPS_HLS",
+        "stream_type": "PRIMARY_STREAM"
+    }],
+    "use_times": 1,
+    "expire_time": 86400
+}
+
+###
+GET {{base_url}}/v1/{{user_id}}/devices/snap?device_id=2102414366LDR4800076&channel_id=1&storage=false
+Access-Token: {{getAccessToken.response.body.access_token}}

@@ -1,10 +1,11 @@
+from collections.abc import Callable
 from functools import partial, wraps
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from ninja import Schema
 from ninja.compatibility.util import get_args as get_collection_args
 from ninja.constants import NOT_SET
-from ninja.errors import ConfigError, HttpError
+from ninja.errors import ConfigError
 from ninja.operation import Operation
 from ninja.signature.details import is_collection_type
 

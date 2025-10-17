@@ -1,9 +1,9 @@
-from functools import partial
 import logging
 import traceback
+from functools import partial
 
 from django.conf import settings
-from django.http import Http404, HttpResponse
+from django.http import Http404
 from ninja import NinjaAPI
 from ninja.errors import AuthenticationError, HttpError, ValidationError
 

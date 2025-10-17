@@ -1,0 +1,33 @@
+{
+  "include": [
+    "."
+  ],
+  "exclude": [
+    "**/__pycache__",
+    "**/.venv",
+    "**/node_modules",
+    "**/htmlcov",
+    "**/hetu.egg-info"
+  ],
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "basic",
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": false,
+  "reportAttributeAccessIssue": false,
+  "reportArgumentType": false,
+  "reportGeneralTypeIssues": false,
+  "reportUnknownMemberType": false,
+  "reportUnknownArgumentType": false,
+  "reportUnknownVariableType": false,
+  "reportUntypedFunctionDecorator": false,
+  "reportUntypedBaseClass": false,
+  "reportUntypedClassDecorator": false,
+  "reportIncompatibleMethodOverride": false,
+  "reportInconsistentConstructor": false,
+  "reportMissingSuperCall": false,
+  "reportUninitializedInstanceVariable": false,
+  "reportUnknownParameterType": false,
+  "reportMissingParameterType": false,
+  "reportUndefinedVariable": false,
+  "reportUnboundVariable": false
+}

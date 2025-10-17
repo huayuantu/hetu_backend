@@ -12,6 +12,8 @@ class VariableBase(Schema):
     type: str
     # 变量读写
     rw: bool = False
+    # 脉冲或电平信号
+    pulse: bool = False
     # 是否本地
     local: bool = False
     # 自定义描述
@@ -63,6 +65,8 @@ class VariableUpdateIn(Schema):
     type: str
     # 变量读写
     rw: bool = False
+    # 脉冲或电平信号
+    pulse: bool = False
     # 自定义描述
     details: str
 

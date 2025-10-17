@@ -1,4 +1,5 @@
 from django.core.management.base import BaseCommand
+
 from apps.sys.models import Department, Role, User
 from apps.sys.utils import get_password
 

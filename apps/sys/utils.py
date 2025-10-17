@@ -1,13 +1,14 @@
 import hashlib
 from datetime import datetime
-from django.http import HttpRequest
 
 import jwt
+from casbin import Enforcer
 from casbin_adapter.enforcer import enforcer
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
+from django.http import HttpRequest
 from ninja.security import HttpBearer
-from casbin import Enforcer
+
 from apps.sys.models import User
 
 
@@ -32,14 +33,14 @@ def get_captcha(captcha_text: str) -> str:
 def get_token(user: User, expires: datetime) -> str:
     """获取JWT令牌"""
 
-    token = {"id": user.id, "username": user.username, "expires": expires.isoformat()}
+    token = {"id": user.pk, "username": user.username, "expires": expires.isoformat()}
     return jwt.encode(token, settings.SECRET_KEY, algorithm="HS256")
 
 
 class AuthBearer(HttpBearer):
     """JWT认证"""
 
-    def __init__(self, perms: list[tuple[str, str]] = []):
+    def __init__(self, perms: list[tuple[str, str]]):
         self._perms = perms
         super().__init__()
 
@@ -56,7 +57,8 @@ class AuthBearer(HttpBearer):
             # 只需要满足任意一项配置的权限
             for p in self._perms:
                 obj = p[0].format(
-                    username=login_token["username"], **request.resolver_match.kwargs
+                    username=login_token["username"],
+                    **(request.resolver_match.kwargs if request.resolver_match else {}),
                 )
                 act = p[1]
 
@@ -66,5 +68,5 @@ class AuthBearer(HttpBearer):
 
             # 所有权限验证都失败
             raise PermissionDenied("没有权限")
-        except:
+        except Exception:
             return None

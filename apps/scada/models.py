@@ -53,6 +53,8 @@ class Variable(models.Model):
     group = models.CharField(max_length=255, db_index=True, default="")
     # 变量读写权限
     rw = models.BooleanField(default=False)
+    # 脉冲或电平信号（写入变量有效）
+    pulse = models.BooleanField(default=False)
     # 是否本地变量
     local = models.BooleanField(default=False)
     # 变量自定义描述
@@ -173,6 +175,7 @@ STATIC_METHOD = (
     ("avg", "平均"),
 )
 
+
 class SiteStatistic(models.Model):
     """站点统计对象"""
 
@@ -186,7 +189,13 @@ class SiteStatistic(models.Model):
     site = models.ForeignKey(Site, on_delete=models.PROTECT)
 
     class Meta:
-        unique_together = [['name', 'site']]
+        unique_together = [["name", "site"]]
+
+
+VideoSourceType = (
+    ("YS", "萤石"),
+    ("VIM", "华为行业视频"),
+)
 
 
 class SiteVideoSource(models.Model):
@@ -195,10 +204,16 @@ class SiteVideoSource(models.Model):
     # 设备ID
     device_id = models.CharField(max_length=255)
     # 设备类别
-    device_type =  models.CharField(max_length=255)
+    device_type = models.CharField(max_length=255)
     # 设备通道
     channel = models.CharField(max_length=255)
     # 状态字段
     status = models.IntegerField(default=1)
     # 所属站点
     site = models.ForeignKey(Site, on_delete=models.PROTECT)
+    # 视频源类别
+    source_type = models.CharField(
+        max_length=100, choices=VideoSourceType, default="YS"
+    )
+    # 截图Base64数据
+    capture = models.TextField(null=True)

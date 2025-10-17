@@ -1,5 +1,6 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
+from casbin_adapter.enforcer import enforcer
 from django.shortcuts import get_object_or_404
 from ninja import Router
 
@@ -14,10 +15,7 @@ from apps.sys.schemas import (
 )
 from apps.sys.utils import AuthBearer
 from utils.schema.base import api_schema
-from casbin_adapter.enforcer import enforcer
-
 from utils.schema.paginate import api_paginate
-
 
 router = Router()
 
@@ -31,7 +29,7 @@ router = Router()
 def create_roles(request, payload: RoleIn):
     """创建角色接口"""
 
-    r = Role(create_time=datetime.now(timezone.utc), **payload.dict())
+    r = Role(create_time=datetime.now(UTC), **payload.dict())
     r.save()
     return r
 
@@ -125,10 +123,11 @@ def update_role_menus(request, role_id: int, payload: RoleMenuIn):
         if m.menu_type == MenuType.BUTTON.value and m.perm:
             # 给角色添加新权限
             enforcer.add_policy(r.code, m.perm, "x")
-        added_menus.append(m.id)
+        added_menus.append(m.pk)
 
     # 保存菜单列表
-    r.menu_set.set(added_menus)
+    for menu in menus:
+        menu.roles.add(r)
 
     return added_menus
 
@@ -143,7 +142,7 @@ def get_role_menus(request, role_id: int):
     """获取角色菜单权限"""
 
     r = get_object_or_404(Role, id=role_id)
-    return [m.id for m in r.menu_set.all()]
+    return [m.pk for m in Menu.objects.filter(roles=r)]
 
 
 @router.delete(

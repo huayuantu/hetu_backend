@@ -3,11 +3,12 @@ import json
 import os
 from datetime import datetime
 from typing import Any
-from django.db.models import Subquery, OuterRef
+
 import requests
 import yaml
 from dateutil.parser import parser
 from django.conf import settings
+from django.db.models import OuterRef, Subquery
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -15,7 +16,7 @@ from ninja import Router
 from ninja.errors import HttpError
 
 from apps.scada.models import Notify, Rule, Variable
-from apps.scada.schema.alert import RuleOut, RuleIn, NotifyOut
+from apps.scada.schema.alert import NotifyOut, RuleIn, RuleOut
 from apps.sys.utils import AuthBearer
 from utils.schema.base import api_schema
 from utils.schema.paginate import api_paginate
@@ -28,10 +29,7 @@ rfc3339_parser = parser()
 def build_expr(r: Rule) -> str:
     """构建规则表达式"""
 
-    metric_selector = 'grm_{module_number}_gauge{{name="{variable_name}"}}'.format(
-        module_number=r.variable.module.module_number,
-        variable_name=r.variable.name,
-    )
+    metric_selector = f'grm_{r.variable.module.module_number}_gauge{{name="{r.variable.name}"}}'
 
     alert_exprs = {
         "hight_limit": "{metric_selector} > {threshold}",
@@ -331,7 +329,7 @@ def get_notifies(request, site_id: int, external_id: str):
         title__startswith=site_filter, external_id=external_id
     )
 
-    return notifies.order_by(("-notified_at")).all()
+    return notifies.order_by("-notified_at").all()
 
 
 @router.get(

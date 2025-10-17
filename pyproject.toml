@@ -1,36 +1,89 @@
-[tool.poetry]
+[project]
 name = "hetu"
 version = "0.1.0"
 description = ""
-authors = ["Huayuan Tu <tuhuayuan@gmail.com>"]
+authors = [
+    {name = "Huayuan Tu", email = "tuhuayuan@gmail.com"}
+]
 readme = "README.md"
+requires-python = ">=3.9,<3.13"
+dependencies = [
+    "django>=4.2.6,<5.0",
+    "django-ninja>=0.22.2,<1.0",
+    "django-environ>=0.11.2,<1.0",
+    "click>=8.1.7,<9.0",
+    "requests>=2.31.0,<3.0",
+    "psycopg2-binary>=2.9.9,<3.0",
+    "prometheus-client>=0.17.1,<1.0",
+    "python-dateutil>=2.8.2,<3.0",
+    "pyjwt>=2.8.0,<3.0",
+    "captcha>=0.5.0,<1.0",
+    "casbin>=1.31.2,<2.0",
+    "casbin-django-orm-adapter>=1.1.2,<2.0",
+    "pyyaml>=6.0.1,<7.0",
+    "pandas>=2.1.1,<3.0",
+    "oss2>=2.18.3,<3.0",
+    "gunicorn>=21.2.0,<22.0",
+    "paho-mqtt>=2.1.0,<3.0",
+]
 
-[tool.poetry.dependencies]
-python = "<3.13,>=3.9"
-django = "^4.2.6"
-django-ninja = "^0.22.2"
-django-environ = "^0.11.2"
-click = "^8.1.7"
-requests = "^2.31.0"
-psycopg2 = "^2.9.9"
-prometheus-client = "^0.17.1"
-python-dateutil = "^2.8.2"
-pyjwt = "^2.8.0"
-captcha = "^0.5.0"
-casbin = "^1.31.2"
-casbin-django-orm-adapter = "^1.1.2"
-pyyaml = "^6.0.1"
-pandas = "^2.1.1"
-oss2 = "^2.18.3"
-gunicorn = "^21.2.0"
-
-
-paho-mqtt = "^2.1.0"
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
 
-[[tool.poetry.source]]
-name = "aliyun"
-url = "http://mirrors.aliyun.com/pypi/simple"
-priority = 'default'
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["apps*", "config*", "utils*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.py", "*.yml", "*.conf"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = false
+disallow_untyped_decorators = false
+no_implicit_optional = false
+warn_redundant_casts = false
+warn_unused_ignores = false
+warn_no_return = false
+warn_unreachable = false
+strict_equality = false
+# 忽略Django模型的objects属性错误
+disable_error_code = ["attr-defined"]
+
+[[tool.mypy.overrides]]
+module = "django.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "apps.sys.models"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "apps.scada.models"
+ignore_errors = true
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "B", "C4", "UP"]
+ignore = [
+    "E501",  # 行太长
+    "B008",  # 不要在函数调用中使用函数调用
+    "C901",  # 函数太复杂
+]
+
+[tool.ruff.lint.per-file-ignores]
+"apps/*/models.py" = ["E501", "B008", "C901", "N806", "N815"]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.17.1",
+    "ruff>=0.12.9",
+]

@@ -1,11 +1,11 @@
 import logging
 
-from casbin.rbac import RoleManager as RM
+from casbin.rbac import RoleManager as BaseRoleManager
 
 from apps.sys.models import Role, User
 
 
-class RoleManager(RM):
+class RoleManager(BaseRoleManager):
     """实现角色管理器"""
 
     def __init__(self):
@@ -24,7 +24,7 @@ class RoleManager(RM):
         """判断username是否属于rolename的角色"""
         if name1 == name2:
             return True
-        
+
         u = User.objects.filter(username=name1).first()
         if not u:
             return False
@@ -46,7 +46,7 @@ class RoleManager(RM):
         if not r:
             return []
 
-        return [u.username for u in r.user_set.all()]
+        return [u.username for u in User.objects.filter(roles=r)]
 
     def print_roles(self):
         pass

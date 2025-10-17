@@ -3,6 +3,7 @@ from datetime import datetime
 from enum import Enum
 
 from ninja import Schema
+from pydantic import Field
 
 
 class RoleBase(Schema):
@@ -17,7 +18,7 @@ class RoleBase(Schema):
     # 排序
     sort: int
 
-    def validate_code(cls, v):
+    def validate_code(self, v):
         pattern = r"^[A-Z][A-Z_]*$"
         if not re.match(pattern, v):
             raise ValueError(
@@ -114,7 +115,7 @@ class DepartmentOptionOut(Schema):
     # 部门名称
     name: str
     # 子部门
-    children: list["DepartmentOptionOut"] = None
+    children: list["DepartmentOptionOut"] | None = None
 
 
 class DepartmentUpdateIn(Schema):
@@ -168,7 +169,7 @@ class UserCreateIn(UserBase):
     # 角色外键 (关联到角色模型)
     role_ids: list[int]
 
-    def validate_username(cls, v):
+    def validate_username(self, v):
         pattern = r"^[a-z][a-z0-9_]*$"
         if not re.match(pattern, v):
             raise ValueError(
@@ -382,7 +383,7 @@ class MenuTreeOptionOut(Schema):
 
     id: int
     name: str
-    children: list["MenuTreeOptionOut"] = None
+    children: list["MenuTreeOptionOut"] | None = None
 
 
 class MenuTreeRouterOut(Schema):
@@ -413,7 +414,7 @@ class MenuTreeRouterOut(Schema):
     # 路由的 meta 数据
     meta: RouterMeta | None
     # 子路由列表
-    children: list["MenuTreeRouterOut"] = None
+    children: list["MenuTreeRouterOut"] = Field(default_factory=list)
 
 
 class ResourceOut(Schema):

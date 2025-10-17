@@ -1,6 +1,7 @@
 from urllib.parse import urlencode
-from django.conf import settings
+
 import requests
+from django.conf import settings
 
 
 class PrometheusQueryError(Exception):
@@ -17,11 +18,11 @@ def promql_query(query_str):
         query_data = response.json()
 
         if query_data["status"] != "success":
-            raise PrometheusQueryError(f'tsdb error {query_data["error"]}')
+            raise PrometheusQueryError(f"tsdb error {query_data['error']}")
 
         return query_data
     except requests.RequestException as e:
-        raise PrometheusQueryError(f"tsdb error: {str(e)}")
+        raise PrometheusQueryError(f"tsdb error: {str(e)}") from e
 
 
 def promql_query_range(
@@ -62,4 +63,4 @@ def promql_query_range(
         return result
 
     except requests.exceptions.RequestException as e:
-        raise PrometheusQueryError(f"tsdb error: {str(e)}")
+        raise PrometheusQueryError(f"tsdb error: {str(e)}") from e

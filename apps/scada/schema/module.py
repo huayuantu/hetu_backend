@@ -5,7 +5,6 @@ from ninja import Schema
 from apps.scada.utils.grm.schemas import GrmModuleInfo
 
 
-
 class ModuleIn(Schema):
     """创建模块输入"""
 

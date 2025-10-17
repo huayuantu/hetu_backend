@@ -163,7 +163,7 @@ class GrmClient:
         lines = self._exdata(data, "R")
         n = int(lines[0])
 
-        for var, row in zip(vars, lines[1 : n + 1]):
+        for var, row in zip(vars, lines[1 : n + 1], strict=True):
             if row.startswith("#ERROR#"):
                 # 给变量设置错误状态
                 var.read_error = int(row[7:])
@@ -182,7 +182,7 @@ class GrmClient:
         lines = self._exdata(data, "W")
         n = int(lines[0])
 
-        for v, r in zip(vars, lines[1 : n + 1]):
+        for v, r in zip(vars, lines[1 : n + 1], strict=True):
             v.write_error = int(r)
 
     @_with_reconnect

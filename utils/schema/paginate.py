@@ -3,15 +3,16 @@
 https://django-ninja.rest-framework.com/guides/response/pagination/#creating-custom-pagination-class
 """
 
+from collections.abc import Callable
 from functools import partial, wraps
-from typing import Any, Callable, Optional, Tuple
+from typing import Any, Optional
 
 from django.conf import settings
 from django.db.models import QuerySet
 from ninja import Field, Query, Schema
 from ninja.compatibility.util import get_args as get_collection_args
 from ninja.constants import NOT_SET
-from ninja.errors import ConfigError, HttpError
+from ninja.errors import ConfigError
 from ninja.operation import Operation
 from ninja.signature.details import is_collection_type
 
@@ -63,7 +64,7 @@ def _inject_pagination(func: Callable) -> Callable:
     paginator = BasePagination()
 
     @wraps(func)
-    def view_with_pagination(*args: Tuple[Any], **kwargs: Any) -> Any:
+    def view_with_pagination(*args: tuple[Any], **kwargs: Any) -> Any:
         # 这个参数是我们通过_ninja_contribute_args放进去的Schema
         pagination_params = kwargs.pop("base_pagination")
 
@@ -131,7 +132,7 @@ def _make_response_paginated(paginator: BasePagination, op: Operation) -> None:
     op.response_models[status_code] = response
 
 
-def _find_collection_response(op: Operation) -> Tuple[int, Any]:
+def _find_collection_response(op: Operation) -> tuple[int, Any]:
     """获取需要分页的视图的响应类型，必须是list类型
     返回对应的状态码和Schema类型
     """

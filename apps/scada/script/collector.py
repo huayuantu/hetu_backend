@@ -12,7 +12,6 @@ from prometheus_client.registry import Collector
 
 from apps.scada.utils.grm.client import GrmClient, GrmError
 
-
 # 配置标准输出到日志
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -50,12 +49,12 @@ class GrmCollector(Collector):
             self._client.read(vars)
         except GrmError as e:
             logger.error(f"读取GRM模块数据错误 {e.message}")
-            raise StopIteration()
+            raise StopIteration() from e
 
         if self._client.token is None:
             logger.error("GRM模块未登录")
             raise StopIteration()
-        
+
         # 构建指标
         g = GaugeMetricFamily(
             f"grm_{self._client.token.id}_gauge",

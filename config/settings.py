@@ -9,9 +9,11 @@ https://docs.djangoproject.com/en/4.2/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.2/ref/settings/
 """
-from pathlib import Path
-import environ
+
 import os
+from pathlib import Path
+
+import environ
 
 BASE_DIR = Path(__file__).resolve(strict=True).parent.parent
 
@@ -35,14 +37,16 @@ DEBUG = env("DEBUG")
 
 # 允许本地和Docker环境
 ALLOWED_HOSTS = os.environ.get("ALLOWED_HOSTS", "*").split(",")
+# 确保包含Docker内部主机名
+if "host.docker.internal" not in ALLOWED_HOSTS and "*" not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append("host.docker.internal")
 
 # 安装的应用列表
 INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.staticfiles",
-    
-    "apps.sys",
-    "apps.scada",
+    "apps.sys.apps.AuthConfig",
+    "apps.scada.apps.GrmConfig",
     "casbin_adapter.apps.CasbinAdapterConfig",
 ]
 
@@ -71,7 +75,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 DATABASES = {"default": env.db_url()}
 
 # 采用默认内存缓存
-CACHES = {"default": env.cache_url()}
+CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache", "LOCATION": "unique-snowflake"}}
 
 # 不使用国际化
 USE_I18N = False
@@ -119,8 +123,17 @@ SUPERVISOR_COLLECTOR_HOST = "0.0.0.0"
 SUPERVISOR_COLLECTOR_ADVERTISE = env("SUPERVISOR_COLLECTOR_ADVERTISE")
 
 # supervisor任务配置目录
-SUPERVISOR_COLLECTOR_DIR =  env("SUPERVISOR_COLLECTOR_DIR")
+SUPERVISOR_COLLECTOR_DIR = env("SUPERVISOR_COLLECTOR_DIR", default="/etc/supervisor/include")
 
+# 萤石云
 YS_APPKEY = env("YS_APPKEY")
-
 YS_APPSECRET = env("YS_APPSECRET")
+
+# IVM华为云
+IVM_BASE_URL = env("IVM_BASE_URL") or "https://api-ivm.myhuaweicloud.com"
+IVM_USER_ID = env("IVM_USER_ID")
+IVM_ACCESS_KEY = env("IVM_ACCESS_KEY")
+IVM_SECRET_KEY = env("IVM_SECRET_KEY")
+
+# 自定义测试运行器，确保能发现tests/目录中的测试
+TEST_RUNNER = 'config.test_runner.CustomTestRunner'

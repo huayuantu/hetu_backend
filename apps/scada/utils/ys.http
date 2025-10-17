@@ -1,0 +1,14 @@
+@appKey = {{$dotenv YS_APPKEY}}
+@appSecret = {{$dotenv YS_APPSECRET}}
+
+###
+# @name getAccessToken
+# 获取访问TOKEN
+
+POST https://open.ys7.com/api/lapp/token/get
+Content-Type: application/x-www-form-urlencoded
+
+appKey={{appKey}}&appSecret={{appSecret}}
+
+###
+# 

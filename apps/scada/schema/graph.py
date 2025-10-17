@@ -14,7 +14,7 @@ class GraphBase(Schema):
     remark: str | None
     # 排序
     order: int = 0
-    
+
 
 
 class GraphIn(GraphBase):

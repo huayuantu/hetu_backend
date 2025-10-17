@@ -1,14 +1,58 @@
+import threading
+
 from django.shortcuts import get_object_or_404
 from ninja import Router
-from apps.scada.models import SiteVideoSource
 
-from apps.scada.schema.videosource import SiteVideoSourceIn, SiteVideoSourceOptionOut, SiteVideoSourceOut
-from apps.scada.utils.ys import get_accecc_token, get_capture_url, get_video_url
+from apps.scada.models import SiteVideoSource
+from apps.scada.schema.videosource import (
+    SiteVideoSourceIn,
+    SiteVideoSourceOptionOut,
+    SiteVideoSourceOut,
+)
+from apps.scada.utils.ivm import (
+    get_access_token as ivm_get_access_token,
+)
+from apps.scada.utils.ivm import (
+    get_capture_url as ivm_get_capture_url,
+)
+from apps.scada.utils.ivm import (
+    get_video_url as ivm_get_video_url,
+)
+from apps.scada.utils.ys import (
+    get_access_token,
+)
+from apps.scada.utils.ys import (
+    get_capture_url as ys_get_capture_url,
+)
+from apps.scada.utils.ys import (
+    get_video_url as ys_get_video_url,
+)
 from apps.sys.utils import AuthBearer
 from utils.schema.base import api_schema
 
-
 router = Router()
+
+
+def update_capture_async(video_id: int, source_type: str, device_id: str, channel: str):
+    """异步更新视频源的截图数据"""
+    try:
+        # 获取新的截图
+        new_capture = None
+        if source_type == "YS":
+            new_capture = ys_get_capture_url(
+                device_id=device_id, channel_id=int(channel)
+            )
+        elif source_type == "VIM":
+            new_capture = ivm_get_capture_url(
+                device_id=device_id, channel_id=channel
+            )
+
+        # 更新数据库中的capture字段
+        if new_capture:
+            SiteVideoSource.objects.filter(id=video_id).update(capture=new_capture)
+            print(f"视频源 {video_id} 的截图已更新")
+    except Exception as e:
+        print(f"更新视频源 {video_id} 截图失败: {e}")
 
 
 @router.post(
@@ -44,7 +88,7 @@ def create_videosource(request, site_id: int, payload: SiteVideoSourceIn):
 def list_videosource(request, site_id: int):
     """列出视频源"""
 
-    return SiteVideoSource.objects.filter(site_id=site_id).all()
+    return SiteVideoSource.objects.filter(site_id=site_id).all()  # type: ignore[attr-defined]
 
 
 @router.get(
@@ -64,17 +108,41 @@ def get_videosource(request, videosource_id: int, site_id: int):
     video = get_object_or_404(SiteVideoSource, id=videosource_id, site_id=site_id)
     output = SiteVideoSourceOut.from_orm(video)
 
-    try:
-        output.capture = get_capture_url(
-            device_serial=video.device_id, channel_no=int(video.channel)
-        )
-        output.video_source = get_video_url(
-            device_serial=video.device_id, channel_no=int(video.channel)
-        )
-        output.token = get_accecc_token()
-    except Exception as e:
-        # raise HttpError(500, f"获取视频截图或播放地址错误: {e}")
-        pass
+    # 先返回数据库中已存储的截图（如果有的话）
+    if video.capture:
+        output.capture = video.capture
+
+    # 启动后台线程异步更新截图
+    thread = threading.Thread(
+        target=update_capture_async,
+        args=(video.id, video.source_type, video.device_id, video.channel)
+    )
+    thread.daemon = True
+    thread.start()
+
+    # 根据视频源类型选择对应的API调用获取视频地址和token
+    if video.source_type == "YS":
+        # 萤石云API
+        try:
+            output.video_source = ys_get_video_url(
+                device_id=video.device_id, channel_id=int(video.channel)
+            )
+            output.token = get_access_token()
+        except Exception as e:
+            print(f"获取萤石云视频地址或Token错误: {e}")
+
+    elif video.source_type == "VIM":
+        # 华为IVM API
+        try:
+            output.video_source = ivm_get_video_url(
+                device_id=video.device_id, channel_id=video.channel
+            )
+            output.token = ivm_get_access_token()
+        except Exception as e:
+            print(f"获取华为IVM视频地址或Token错误: {e}")
+    else:
+        # 不支持的视频源类型
+        print(f"不支持的视频源类型: {video.source_type}")
 
     return output
 

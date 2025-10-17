@@ -3,12 +3,13 @@ import os
 import time
 from string import Template
 from xmlrpc.client import ServerProxy
-from django.shortcuts import get_object_or_404
+
 from django.conf import settings
+from django.shortcuts import get_object_or_404
 from ninja import Router
 from ninja.errors import HttpError
-from apps.scada.models import Collector, Module
 
+from apps.scada.models import Collector, Module
 from apps.scada.schema.collector import (
     CollectorIn,
     CollectorOut,
@@ -16,7 +17,6 @@ from apps.scada.schema.collector import (
 )
 from apps.sys.utils import AuthBearer
 from utils.schema.base import api_schema
-from utils.schema.paginate import api_paginate
 
 router = Router()
 
@@ -39,27 +39,27 @@ def supervisor_update():
     """
 
     result = rpc.supervisor.reloadConfig()
-    added, changed, removed = result[0]
+    added, changed, removed = result[0]  # pyright: ignore
 
-    for gname in removed:
+    for gname in removed:  # pyright: ignore
         try:
             rpc.supervisor.stopProcessGroup(gname)
             rpc.supervisor.removeProcessGroup(gname)
-        except:
+        except Exception:
             continue
 
-    for gname in changed:
+    for gname in changed:  # pyright: ignore
         try:
             rpc.supervisor.stopProcessGroup(gname)
             rpc.supervisor.removeProcessGroup(gname)
             rpc.supervisor.addProcessGroup(gname)
-        except:
+        except Exception:
             continue
 
-    for gname in added:
+    for gname in added:  # pyright: ignore
         try:
             rpc.supervisor.addProcessGroup(gname)
-        except:
+        except Exception:
             continue
 
 
@@ -75,7 +75,7 @@ def get_proccess_file(collector: Collector):
     return f"{settings.SUPERVISOR_COLLECTOR_DIR}/{get_proccess_name(collector)}.conf"
 
 
-def rewrite_process_config(collector: Collector) -> bool:
+def rewrite_process_config(collector: Collector):
     """更新配置文件"""
 
     process_name = get_proccess_name(collector)
@@ -92,6 +92,7 @@ def rewrite_process_config(collector: Collector) -> bool:
         port=settings.SUPERVISOR_COLLECTOR_PORT,
         advertise=settings.SUPERVISOR_COLLECTOR_ADVERTISE,
     )
+
     # 获得文件锁
     with open(file_path, "w") as file:
         try:
@@ -137,8 +138,8 @@ def create_collector(request, site_id: int, module_id: int, payload: CollectorIn
     # 更新守护进程
     try:
         supervisor_update()
-    except Exception:
-        raise HttpError(500, "采集器配置失败")
+    except Exception as e:
+        raise HttpError(500, "采集器配置失败") from e
 
     return collector
 
@@ -146,19 +147,19 @@ def create_collector(request, site_id: int, module_id: int, payload: CollectorIn
 def get_exporter_url(process_name: str) -> str:
     """解析日志里面的服务地址"""
 
-    log = rpc.supervisor.tailProcessStdoutLog(process_name, 0, 255)[0]
+    log = rpc.supervisor.tailProcessStdoutLog(process_name, 0, 255)[0]  # pyright: ignore
     advertise = ""
     try:
-        lines = log.splitlines()[::-1]
+        lines = log.splitlines()[::-1]  # pyright: ignore
 
-        for l in lines:
-            if l.startswith("# ADVERTISE"):
+        for line in lines:
+            if line.startswith("# ADVERTISE"):
                 # 格式是这样的 # ADVERTISE 27.0.0.1:20986
-                advertise = l.split(" ")[2]
+                advertise = line.split(" ")[2]
                 raise EOFError()
         return ""
-    except:
-        return advertise
+    except Exception:
+        return advertise  # pyright: ignore
 
 
 def service_discover(request):
@@ -174,7 +175,7 @@ def service_discover(request):
         try:
             info = rpc.supervisor.getProcessInfo(process_name)
 
-            if info["statename"] == "RUNNING":
+            if info["statename"] == "RUNNING":  # pyright: ignore
                 # 加入服务发现
                 running_list.append(
                     {
@@ -185,7 +186,7 @@ def service_discover(request):
                         },
                     }
                 )
-        except:
+        except Exception:
             # 不需要处理错误
             continue
 
@@ -216,8 +217,8 @@ def get_collector_list(request, site_id: int, module_id: int):
         process_name = get_proccess_name(c)
         try:
             info = rpc.supervisor.getProcessInfo(process_name)
-            out.running = info["statename"] == "RUNNING"
-        except:
+            out.running = info["statename"] == "RUNNING"  # pyright: ignore
+        except Exception:
             out.running = False
 
         # 获取运行地址
@@ -256,7 +257,7 @@ def change_collector_status(
     process_name = get_proccess_name(collector)
 
     info = rpc.supervisor.getProcessInfo(process_name)
-    running = info["statename"] == "RUNNING"
+    running = info["statename"] == "RUNNING"  # pyright: ignore
     collector_url = ""
 
     if payload.running and running:
@@ -266,15 +267,15 @@ def change_collector_status(
     if not payload.running and running:
         # 停止服务
         result = rpc.supervisor.stopProcessGroup(process_name)
-        if result and result[0]["description"] != "OK":
-            raise Exception("停止服务错误: " + str(result[0]["description"]))
+        if result and result[0]["description"] != "OK":  # pyright: ignore
+            raise Exception("停止服务错误: " + str(result[0]["description"]))  # pyright: ignore
 
     if payload.running and not running:
         # 启动服务
         result = rpc.supervisor.startProcessGroup(process_name, True)
 
-        if result and result[0]["description"] != "OK":
-            raise Exception("启动服务错误: " + str(result[0]["description"]))
+        if result and result[0]["description"] != "OK":  # pyright: ignore
+            raise Exception("启动服务错误: " + str(result[0]["description"]))  # pyright: ignore
 
         # 获取服务地址
         for _ in range(0, 3):
@@ -283,7 +284,7 @@ def change_collector_status(
             if not collector_url:
                 result = rpc.supervisor.getProcessInfo(process_name)
 
-                if result["statename"] == "RUNNING":
+                if result["statename"] == "RUNNING":  # pyright: ignore
                     time.sleep(1)
                 else:
                     break
@@ -321,7 +322,7 @@ def delete_collector(
     try:
         delete_process_config(collector)
         supervisor_update()
-    except:
+    except Exception:
         pass
 
     return "Ok"

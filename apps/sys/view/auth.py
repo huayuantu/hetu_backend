@@ -1,8 +1,8 @@
 import base64
-from datetime import datetime, timedelta, timezone
 import hashlib
 import random
 import string
+from datetime import UTC, datetime, timedelta
 
 from captcha.image import ImageCaptcha
 from django.conf import settings
@@ -44,19 +44,20 @@ def captcha(request):
 @router.post("/login", response=LoginOut)
 @api_schema
 def login(request, payload: LoginIn):
-
     # 先检测验证码
     if get_captcha(payload.verify_code) != payload.verify_code_key:
         # if not settings.DEBUG:
         raise HttpError(401, "验证码错误")
 
     u = User.objects.filter(
-        username=payload.username, password=get_password(payload.password), status=1
+        username=payload.username,
+        password=get_password(payload.password),
+        status=1,
     ).first()
     if not u:
         raise HttpError(401, "用户名或密码错误")
 
-    expires = datetime.now(timezone.utc) + timedelta(days=1)
+    expires = datetime.now(UTC) + timedelta(days=1)
     out = LoginOut(
         access_token=get_token(u, expires),
         token_type="Bearer",
@@ -68,4 +69,4 @@ def login(request, payload: LoginIn):
 @router.delete("/logout", response=str)
 @api_schema
 def logout(request):
-    return 'ok'
+    return "ok"

@@ -1,8 +1,9 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
+from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from ninja import Router
-from django.db.models import Q
+
 from apps.sys.models import Department
 from apps.sys.schemas import (
     DepartmentIn,
@@ -26,7 +27,7 @@ router = Router()
 def create_dept(request, payload: DepartmentIn):
     """创建部门"""
 
-    d = Department(create_time=datetime.now(timezone.utc), **payload.dict())
+    d = Department(create_time=datetime.now(UTC), **payload.dict())
     d.save()
     return d
 
@@ -43,7 +44,7 @@ def get_dept_option_list(request):
 
     def _get_children(current: Department):
         current_out = DepartmentOptionOut.from_orm(current)
-        subs = Department.objects.filter(parent_id=current.id)
+        subs = Department.objects.filter(parent_id=current.pk)
         if subs:
             current_out.children = []
             for sub_dept in subs:
@@ -65,7 +66,7 @@ def get_dept_option_list(request):
     auth=AuthBearer([("sys:dept:edit", "x")]),
 )
 @api_schema
-def get_dept_list(request, status: int = None, keywords: str = None):
+def get_dept_list(request, status: int | None = None, keywords: str | None = None):
     """获取部门列表"""
     output: list[DepartmentListOut] = []
     depts = Department.objects.all()
@@ -86,11 +87,14 @@ def get_dept_list(request, status: int = None, keywords: str = None):
                 current_out.children.append(child_out)
         return current_out
 
-    ids = set([d.id for d in depts.all()])
+    ids = {d.pk for d in depts.all()}
     root_depts = [
-        dept for dept in depts.all() if not dept.parent_id or dept.parent_id not in ids
+        dept
+        for dept in depts.all()
+        if not getattr(dept, "parent_id", None)
+        or getattr(dept, "parent_id", None) not in ids
     ]
-    
+
     for dept in root_depts:
         dept_out = _get_children_out(dept)
         output.append(dept_out)
@@ -122,16 +126,19 @@ def update_dept(request, dept_id: int, payload: DepartmentUpdateIn):
     d.sort = payload.sort
     d.description = payload.description
     d.status = payload.status
-    d.parent_id = payload.parent_id
+    if payload.parent_id:
+        d.parent = Department.objects.get(id=payload.parent_id)
+    else:
+        d.parent = None
     d.save()
     return d
 
 
-@router.delete('/{dept_id}', response=str, auth=AuthBearer([("sys:dept:delete", "x")]))
+@router.delete("/{dept_id}", response=str, auth=AuthBearer([("sys:dept:delete", "x")]))
 @api_schema
 def delete_dept(request, dept_id: int):
     """删除部门"""
 
     d = get_object_or_404(Department, id=dept_id)
     d.delete()
-    return 'Ok'
+    return "Ok"

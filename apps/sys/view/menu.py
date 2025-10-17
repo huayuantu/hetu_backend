@@ -1,8 +1,8 @@
+from casbin_adapter.enforcer import enforcer
 from django.shortcuts import get_object_or_404
 from ninja import Router
 
 from apps.sys.models import Menu
-from casbin_adapter.enforcer import enforcer
 from apps.sys.schemas import (
     MenuIn,
     MenuInfoOut,
@@ -51,12 +51,12 @@ def get_menu_option_tree(request):
         # 递归
         for child in children:
             child_data = _get_menu_and_child(child)
-            if child_data:
+            if child_data and current_data.children:
                 current_data.children.append(child_data)
         return current_data
 
     root_menus = Menu.objects.filter(parent_id=0).all()
-    root_menus_data: MenuTreeOptionOut = []
+    root_menus_data: list[MenuTreeOptionOut] = []
     for m in root_menus:
         menu_data = _get_menu_and_child(m)
         root_menus_data.append(menu_data)
@@ -90,13 +90,13 @@ def get_menu_router_tree(request):
 
         # 构建 name，如果有父级名称则结合父级名称和当前 path 的驼峰形式来确保唯一性
         if menu.menu_type == MenuType.MENU:
-            combined_name = (parent_name + '-' + menu.path).replace("/", "-")
+            combined_name = (parent_name + "-" + menu.path).replace("/", "-")  # pyright: ignore[reportOperatorIssue]
             current_router.name = _to_camel_case(combined_name)
         else:
             current_router.name = menu.path
 
         children = (
-            Menu.objects.filter(parent_id=menu.id).exclude(menu_type="BUTTON").all()
+            Menu.objects.filter(parent_id=menu.pk).exclude(menu_type="BUTTON").all()
         )
         if children:
             current_router.children = []
@@ -109,7 +109,7 @@ def get_menu_router_tree(request):
         return current_router
 
     root_menus = Menu.objects.filter(parent_id=0).exclude(menu_type="BUTTON").all()
-    root_menus_router: MenuTreeRouterOut = []
+    root_menus_router: list[MenuTreeRouterOut] = []
     for m in root_menus:
         menu_router = _get_menu_and_child(m)
         root_menus_router.append(menu_router)
@@ -182,7 +182,7 @@ def change_meun_visible(request, menu_id: int, visible: bool):
     auth=AuthBearer([("sys:menu:edit", "x")]),
 )
 @api_schema
-def get_menu_tree(request, visible: int = None, keyword: str = None):
+def get_menu_tree(request, visible: int | None = None, keyword: str | None = None):
     """获取菜单树列表"""
 
     def _get_filter(parent_id):
@@ -199,12 +199,12 @@ def get_menu_tree(request, visible: int = None, keyword: str = None):
         children = Menu.objects.filter(**_get_filter(current_data.id)).all()
         for child in children:
             child_data = _get_menu_and_child(child)
-            if child_data:
-                current_data.children.append(child_data)
+            if child_data and current_data.children:
+                current_data.children.append(child_data)  # type: ignore
         return current_data
 
     root_menus = Menu.objects.filter(**_get_filter(None)).all()
-    root_menus_data: MenuTreeOut = []
+    root_menus_data: list[MenuTreeOut] = []
     for m in root_menus:
         menu_data = _get_menu_and_child(m)
         root_menus_data.append(menu_data)

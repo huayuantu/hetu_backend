@@ -1,8 +1,8 @@
 # 每个线程保留一个模块的连接
 import threading
+
 from apps.scada.models import Module
 from apps.scada.utils.grm.client import GrmClient
-
 
 grm_pool_local = threading.local()
 

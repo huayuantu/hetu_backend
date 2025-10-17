@@ -6,9 +6,9 @@ import urllib.parse
 from typing import Any
 
 import click
+import requests
 from paho.mqtt import client as mqtt
 from pydantic import BaseModel, Extra, Field
-import requests
 
 from apps.scada.utils.grm.client import GrmClient
 from apps.scada.utils.grm.schemas import GrmVariable

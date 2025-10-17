@@ -1,7 +1,7 @@
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
-from ninja.errors import HttpError
 from ninja import Router
+from ninja.errors import HttpError
 
 from apps.scada.models import Site, SiteStatistic
 from apps.scada.schema.site import (
@@ -15,8 +15,8 @@ from apps.scada.schema.site import (
     SiteStatisticValueOut,
 )
 from apps.scada.utils.promql import promql_query
-from apps.sys.utils import AuthBearer, get_enforcer
 from apps.sys.models import User
+from apps.sys.utils import AuthBearer, get_enforcer
 from utils.schema.base import api_schema
 from utils.schema.paginate import api_paginate
 

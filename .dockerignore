@@ -13,6 +13,11 @@
 .dockerignore
 .DS_Store
 
+# 忽略虚拟环境
+.venv
+venv
+env
+
 # 忽略版本控制相关文件
 .git
 .gitignore

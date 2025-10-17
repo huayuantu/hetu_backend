@@ -12,7 +12,6 @@ from apps.scada.schema.module import (
     ModuleOut,
     ModuleUpdateIn,
 )
-from apps.scada.utils.grm.client import GrmError
 from apps.scada.utils.pool import get_grm_client
 from apps.sys.utils import AuthBearer
 from utils.schema.base import api_schema
