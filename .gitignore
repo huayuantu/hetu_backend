@@ -281,3 +281,6 @@ deploy/uploads
 resource/
 
 .vscode/
+
+# Database files
+hetu.sql
