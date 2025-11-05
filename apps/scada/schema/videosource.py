@@ -1,4 +1,3 @@
-from typing import Optional
 
 from ninja import Schema
 
@@ -39,6 +38,6 @@ class SiteVideoSourceOut(SiteVideoSourceOptionOut):
     # 视频播放地址
     video_source: str = ""
     # 截图地址
-    capture: Optional[str] = None
+    capture: str | None = None
     # 访问Token，根据类型不同可能需要
     token: str = ""

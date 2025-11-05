@@ -5,11 +5,11 @@ from ninja.errors import HttpError
 
 from apps.scada.models import Site, SiteStatistic
 from apps.scada.schema.site import (
-    SITE_PERMIT,
     SiteIn,
     SiteOptionOut,
     SiteOut,
     SitePermit,
+    SitePermitType,
     SiteStatisticIn,
     SiteStatisticOut,
     SiteStatisticValueOut,
@@ -50,7 +50,7 @@ def get_permit_list(request, site_id: int):
             permit[user_id] = permission
 
     output = [
-        SitePermit(user_id=user_id, permit=SITE_PERMIT(permission), site_id=site_id)
+        SitePermit(user_id=user_id, permit=SitePermitType(permission), site_id=site_id)
         for user_id, permission in permit.items()
     ]
 
@@ -88,7 +88,7 @@ def get_permit_by_user(request, user_id: int):
             permit[site_id] = permission
 
     output = [
-        SitePermit(user_id=user_id, permit=SITE_PERMIT(permission), site_id=site_id)
+        SitePermit(user_id=user_id, permit=SitePermitType(permission), site_id=site_id)
         for site_id, permission in permit.items()
     ]
 
@@ -111,10 +111,10 @@ def grand_permits(request, site_id: int, payload: SitePermit):
     enforcer = get_enforcer()
     user = get_object_or_404(User, id=payload.user_id)
 
-    if payload.permit == SITE_PERMIT.WRITE:
+    if payload.permit == SitePermitType.WRITE:
         enforcer.add_policy(user.username, f"scada:site:permit:{site_id}", "w")
         enforcer.add_policy(user.username, f"scada:site:permit:{site_id}", "r")
-    elif payload.permit == SITE_PERMIT.READ:
+    elif payload.permit == SitePermitType.READ:
         enforcer.remove_filtered_policy(
             0, user.username, f"scada:site:permit:{site_id}"
         )
@@ -158,14 +158,14 @@ def create_site(request, payload: SiteIn):
 def get_site_option_list(request):
     """选项列表"""
 
-    enforcer = get_enforcer()
-
-    policies = enforcer.get_filtered_policy(0, request.auth["username"])
-    permit_ids = [
-        int(policy[1].split(":")[-1])
-        for policy in policies
-        if policy[1].startswith("scada:site:permit:")
-    ]
+    # Note: permit filtering was disabled, returning all sites
+    # enforcer = get_enforcer()
+    # policies = enforcer.get_filtered_policy(0, request.auth["username"])
+    # permit_ids = [
+    #     int(policy[1].split(":")[-1])
+    #     for policy in policies
+    #     if policy[1].startswith("scada:site:permit:")
+    # ]
     # return Site.objects.filter(id__in=permit_ids)
     return Site.objects.all()
 
@@ -270,7 +270,8 @@ def delete_site(request, site_id: int):
 def create_statistic(request, site_id: int, payload: SiteStatisticIn):
     """创建站点统计变量"""
 
-    site = get_object_or_404(Site, id=site_id)
+    # Verify site exists
+    get_object_or_404(Site, id=site_id)
     statistic = SiteStatistic(
         site_id=site_id, **payload.dict(exclude={"variable_ids": True})
     )

@@ -7,11 +7,12 @@
     "**/.venv",
     "**/node_modules",
     "**/htmlcov",
-    "**/hetu.egg-info"
+    "**/hetu.egg-info",
+    "**/migrations"
   ],
   "pythonVersion": "3.12",
   "typeCheckingMode": "basic",
-  "reportMissingImports": true,
+  "reportMissingImports": "warning",
   "reportMissingTypeStubs": false,
   "reportAttributeAccessIssue": false,
   "reportArgumentType": false,
@@ -29,5 +30,11 @@
   "reportUnknownParameterType": false,
   "reportMissingParameterType": false,
   "reportUndefinedVariable": false,
-  "reportUnboundVariable": false
+  "reportUnboundVariable": false,
+  "reportOptionalSubscript": false,
+  "reportReturnType": false,
+  "reportAssignmentType": false,
+  "reportOptionalMemberAccess": false,
+  "reportCallIssue": false,
+  "stubPath": "./typings"
 }

@@ -1,6 +1,6 @@
 from collections.abc import Callable
 from functools import partial, wraps
-from typing import Any, Optional
+from typing import Any
 
 from ninja import Schema
 from ninja.compatibility.util import get_args as get_collection_args
@@ -80,7 +80,7 @@ def _make_api_schema(op: Operation) -> None:
         new_schema_name,
         (BaseSchemaOut,),
         {
-            "__annotations__": {"data": Optional[data_schema]},  # type: ignore
+            "__annotations__": {"data": data_schema | None},  # type: ignore
         },
     )  # typing: ignore
 

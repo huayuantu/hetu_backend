@@ -156,7 +156,7 @@ def set_rule(request, site_id: int, payload: RuleIn):
             # 更新配置
             reload_config()
         except Exception as e:
-            raise HttpError(500, "写入配置失败: " + str(e))
+            raise HttpError(500, "写入配置失败: " + str(e)) from e
         finally:
             # 释放文件锁
             fcntl.flock(file, fcntl.LOCK_UN)
@@ -226,7 +226,7 @@ def delete_rule(request, site_id: int, rule_id: int):
                         # 热加载
                         reload_config()
         except Exception as e:
-            raise HttpError(500, "删除配置文件: " + str(e))
+            raise HttpError(500, "删除配置文件: " + str(e)) from e
         finally:
             # 释放文件锁
             fcntl.flock(file, fcntl.LOCK_UN)
@@ -379,7 +379,7 @@ def get_notify_total(request, site_id: int, ack: bool = None):
     filter_title = str(site_id) + "::"
     notifies = Notify.objects.filter(title__startswith=filter_title)
 
-    if ack != None:
+    if ack is not None:
         notifies = notifies.filter(ack=ack)
 
     return notifies.count()

@@ -53,7 +53,7 @@ class SiteOptionOut(Schema):
     latitude: float = 30.592849
 
 
-class STATIC_METHOD(str, Enum):
+class StaticMethod(str, Enum):
     """统计类型"""
 
     SUM = "sum"
@@ -66,7 +66,7 @@ class SiteStatisticBase(Schema):
     # 统计名
     name: str
     # 统计类型
-    method: STATIC_METHOD = STATIC_METHOD.SUM
+    method: StaticMethod = StaticMethod.SUM
     # 统计对象
     variable_ids: list[int] = []
 
@@ -93,7 +93,7 @@ class SiteStatisticValueOut(SiteStatisticOut):
     timestamp: float = 0
 
 
-class SITE_PERMIT(str, Enum):
+class SitePermitType(str, Enum):
     """站点权限类型"""
 
     NONE = "none"
@@ -106,4 +106,4 @@ class SitePermit(Schema):
 
     site_id: int
     user_id: int
-    permit: SITE_PERMIT
+    permit: SitePermitType

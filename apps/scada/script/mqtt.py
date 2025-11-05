@@ -292,4 +292,4 @@ def main(
 
 
 if __name__ == "__main__":
-    main()
+    main()  # type: ignore  # CLI parameters are provided via command line

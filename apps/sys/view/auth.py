@@ -46,7 +46,6 @@ def captcha(request):
 def login(request, payload: LoginIn):
     # 先检测验证码
     if get_captcha(payload.verify_code) != payload.verify_code_key:
-        # if not settings.DEBUG:
         raise HttpError(401, "验证码错误")
 
     u = User.objects.filter(
@@ -61,6 +60,7 @@ def login(request, payload: LoginIn):
     out = LoginOut(
         access_token=get_token(u, expires),
         token_type="Bearer",
+        refresh_token=None,
         expires=expires,
     )
     return out

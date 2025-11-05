@@ -172,4 +172,4 @@ def cli(random_port, host, advertise, module_number, module_secret, module_url):
 
 
 if __name__ == "__main__":
-    cli()
+    cli()  # type: ignore  # CLI parameters are provided via command line

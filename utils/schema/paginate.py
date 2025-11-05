@@ -5,7 +5,7 @@ https://django-ninja.rest-framework.com/guides/response/pagination/#creating-cus
 
 from collections.abc import Callable
 from functools import partial, wraps
-from typing import Any, Optional
+from typing import Any
 
 from django.conf import settings
 from django.db.models import QuerySet
@@ -122,7 +122,7 @@ def _make_response_paginated(paginator: BasePagination, op: Operation) -> None:
         new_item_name + "Out",
         (BaseSchemaOut,),
         {
-            "__annotations__": {"data": Optional[new_item_schema]},  # type: ignore
+            "__annotations__": {"data": new_item_schema | None},  # type: ignore
         },
     )  # typing: ignore
 

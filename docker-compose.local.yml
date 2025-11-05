@@ -1,3 +1,5 @@
+name: hetu
+
 services:
   redis:
     image: redis:7
