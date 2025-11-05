@@ -283,4 +283,4 @@ resource/
 .vscode/
 
 # Database files
-hetu.sql
+*.sql
