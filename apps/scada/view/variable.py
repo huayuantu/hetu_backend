@@ -18,6 +18,7 @@ from prometheus_client import (
 
 from apps.scada.models import Module, Variable
 from apps.scada.schema.variable import (
+    QueryRangeIn,
     ReadValueIn,
     ReadValueOut,
     VariableIn,
@@ -146,6 +147,100 @@ def read_values(
                         timestamp=result["value"][0], value=float(result["value"][1])
                     )
                     out.values.append(value)
+                    break
+            outlist.append(out)
+
+    return outlist
+
+
+@router.post(
+    "/{site_id}/variable/range",
+    response=list[ReadValueOut],
+    auth=AuthBearer(
+        [
+            ("scada:variable:read", "x"),
+            ("scada:site:permit:{site_id}", "r"),
+        ]
+    ),
+)
+@api_schema
+def query_range(
+    request,
+    site_id: int,
+    payload: QueryRangeIn,
+):
+    """批量查询变量历史数据，支持聚合函数"""
+    # 验证时间范围
+    if payload.start_time >= payload.end_time:
+        raise HttpError(400, "start_time must be less than end_time")
+
+    # 验证变量是否存在且属于指定站点
+    vars = Variable.objects.filter(id__in=payload.variable_ids, module__site_id=site_id)
+    if vars.count() != len(payload.variable_ids):
+        raise HttpError(404, "Some variables not found or not belong to this site")
+
+    # 按模块分组变量（因为 Prometheus 指标是按模块存储的）
+    grouped_vars = (
+        vars.select_related("module")
+        .values("module_id", "module__module_number")
+        .distinct()
+    )
+
+    outlist: list[ReadValueOut] = []
+
+    # 数据是按模块存储，所以变量按模块获取
+    for entry in grouped_vars:
+        module_id = entry["module_id"]
+        module_number = entry["module__module_number"]
+        module_vars = vars.filter(module_id=module_id)
+
+        # 构建基础 PromQL 查询
+        base_query = "grm_" + module_number + "_gauge"
+        base_query += '{name=~"' + "|".join([v.name for v in module_vars]) + '"}'
+
+        # 如果指定了聚合方式，应用聚合函数
+        if payload.aggregation:
+            aggregation_map = {
+                "avg": "avg_over_time",
+                "min": "min_over_time",
+                "max": "max_over_time",
+            }
+            if payload.aggregation not in aggregation_map:
+                raise HttpError(
+                    400,
+                    f"Invalid aggregation: {payload.aggregation}. Must be 'avg', 'min', or 'max'",
+                )
+            # 使用聚合函数，格式：{aggregation}_over_time(metric[{step}s])
+            query_str = (
+                f"{aggregation_map[payload.aggregation]}({base_query}[{payload.step}s])"
+            )
+        else:
+            # 不使用聚合，直接查询原始数据
+            query_str = base_query
+
+        try:
+            result = promql_query_range(
+                query_str, payload.start_time, payload.end_time, payload.step
+            )
+        except PrometheusQueryError as e:
+            raise HttpError(500, f"Prometheus Query Error: {e}") from e
+        except requests.RequestException as e:
+            raise HttpError(500, f"Request Error: {e}") from e
+
+        # 构建输出结构
+        for v in module_vars:
+            out = ReadValueOut.from_orm(v)
+            # 从 Prometheus 结果中查找匹配的变量
+            for ret in result:
+                metric_name = ret.get("metric", {}).get("name")
+                if metric_name == v.name:
+                    # 处理 values 数组
+                    for value_tuple in ret.get("values", []):
+                        timestamp = int(value_tuple[0])
+                        value = float(value_tuple[1])
+                        out.values.append(
+                            ReadValueOut.Value(timestamp=timestamp, value=value)
+                        )
                     break
             outlist.append(out)
 
@@ -352,6 +447,7 @@ def update_variable_values(
 
         # 若为脉冲变量且本次写入成功（仅远程变量），则2秒后回落为0
         if out.error == 0 and var and var.pulse and not var.local:
+
             def _reset_to_zero(
                 _module=var.module,
                 _type=var.type,

@@ -17,7 +17,7 @@ class VariableBase(Schema):
     # 是否本地
     local: bool = False
     # 自定义描述
-    details: str = ''
+    details: str = ""
 
 
 class VariableOut(VariableBase):
@@ -110,3 +110,18 @@ class WriteValueOut(Schema):
     id: int
     # 写入结果
     error: int = 0
+
+
+class QueryRangeIn(Schema):
+    """批量变量历史数据查询请求结构"""
+
+    # 变量ID列表
+    variable_ids: list[int]
+    # 开始时间（Unix时间戳，秒）
+    start_time: int
+    # 结束时间（Unix时间戳，秒）
+    end_time: int
+    # 步长（秒），默认60
+    step: int = 60
+    # 聚合方式：'avg' | 'min' | 'max' | None，默认None（不聚合）
+    aggregation: str = None
