@@ -116,6 +116,14 @@ networks:
 
 volumes:
   redis_data:
+    external: true
+    name: hetu_backend_redis_data
   postgres_data:
+    external: true
+    name: hetu_backend_postgres_data
   prometheus_data:
+    external: true
+    name: hetu_backend_prometheus_data
   pushgateway_data:
+    external: true
+    name: hetu_backend_pushgateway_data
