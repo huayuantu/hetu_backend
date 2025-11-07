@@ -134,3 +134,66 @@ class Menu(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class Message(models.Model):
+    """站内消息模型"""
+
+    # 消息类型
+    MESSAGE_TYPE_CHOICES = [
+        ("text", "文本"),
+        ("system", "系统"),
+        ("task", "任务"),
+        ("alert", "告警"),
+    ]
+
+    # 消息状态
+    STATUS_CHOICES = [
+        ("sent", "已发送"),
+        ("delivered", "已送达"),
+        ("read", "已读"),
+        ("unread", "未读"),
+    ]
+
+    # 优先级
+    PRIORITY_CHOICES = [
+        ("low", "低"),
+        ("normal", "普通"),
+        ("high", "重要"),
+        ("urgent", "紧急"),
+    ]
+
+    # 发送者
+    sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name="sent_messages")
+    # 接收者
+    receiver = models.ForeignKey(User, on_delete=models.CASCADE, related_name="received_messages")
+    # 消息类型
+    message_type = models.CharField(max_length=20, choices=MESSAGE_TYPE_CHOICES, default="text")
+    # 主题
+    subject = models.CharField(max_length=255, null=True, blank=True)
+    # 内容
+    content = models.TextField()
+    # 状态
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="sent")
+    # 优先级
+    priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default="normal")
+    # 操作链接
+    action_url = models.URLField(max_length=500, null=True, blank=True)
+    # 操作按钮文字
+    action_text = models.CharField(max_length=100, null=True, blank=True)
+    # 创建时间
+    create_time = models.DateTimeField(auto_now_add=True)
+    # 更新时间
+    update_time = models.DateTimeField(auto_now=True)
+    # 已读时间
+    read_time = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-create_time"]
+        indexes = [
+            models.Index(fields=["receiver", "-create_time"]),
+            models.Index(fields=["receiver", "status"]),
+        ]
+
+    def __str__(self):
+        return f"{self.sender.username} -> {self.receiver.username}: {self.subject or self.content[:50]}"

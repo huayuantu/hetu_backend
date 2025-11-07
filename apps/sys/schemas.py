@@ -422,3 +422,35 @@ class ResourceOut(Schema):
 
     resource_key: str
     resource_url: str
+
+
+class MessageIn(Schema):
+    """消息输入结构体"""
+
+    receiver_id: int = Field(..., description="接收者ID")
+    message_type: str = Field(default="text", description="消息类型: text, system, task, alert")
+    subject: str | None = Field(None, description="主题")
+    content: str = Field(..., description="消息内容")
+    priority: str = Field(default="normal", description="优先级: low, normal, high, urgent")
+    action_url: str | None = Field(None, description="操作链接")
+    action_text: str | None = Field(None, description="操作按钮文字")
+
+
+class MessageOut(Schema):
+    """消息输出结构体"""
+
+    id: int
+    sender_id: int
+    sender_name: str | None = None
+    sender_nickname: str | None = None
+    receiver_id: int
+    message_type: str
+    subject: str | None = None
+    content: str
+    status: str
+    priority: str
+    action_url: str | None = None
+    action_text: str | None = None
+    create_time: datetime
+    update_time: datetime
+    read_time: datetime | None = None
