@@ -1,3 +1,4 @@
+from datetime import datetime
 
 from ninja import Schema
 
@@ -41,3 +42,5 @@ class SiteVideoSourceOut(SiteVideoSourceOptionOut):
     capture: str | None = None
     # 访问Token，根据类型不同可能需要
     token: str = ""
+    # 截图最后更新时间
+    capture_updated_at: datetime | None = None

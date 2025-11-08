@@ -1,6 +1,8 @@
+import logging
 import threading
 
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from ninja import Router
 
 from apps.scada.models import SiteVideoSource
@@ -31,6 +33,7 @@ from apps.sys.utils import AuthBearer
 from utils.schema.base import api_schema
 
 router = Router()
+logger = logging.getLogger(__name__)
 
 
 def update_capture_async(video_id: int, source_type: str, device_id: str, channel: str):
@@ -47,12 +50,17 @@ def update_capture_async(video_id: int, source_type: str, device_id: str, channe
                 device_id=device_id, channel_id=channel
             )
 
-        # 更新数据库中的capture字段
+        # 更新数据库中的capture字段和时间戳
         if new_capture:
-            SiteVideoSource.objects.filter(id=video_id).update(capture=new_capture)
-            print(f"视频源 {video_id} 的截图已更新")
+            SiteVideoSource.objects.filter(id=video_id).update(
+                capture=new_capture,
+                capture_updated_at=timezone.now()
+            )
+            logger.info(f"视频源 {video_id} 的截图已更新")
+        else:
+            logger.warning(f"视频源 {video_id} 获取截图失败，返回为空")
     except Exception as e:
-        print(f"更新视频源 {video_id} 截图失败: {e}")
+        logger.error(f"更新视频源 {video_id} 截图失败: {e}", exc_info=True)
 
 
 @router.post(
@@ -112,13 +120,20 @@ def get_videosource(request, videosource_id: int, site_id: int):
     if video.capture:
         output.capture = video.capture
 
-    # 启动后台线程异步更新截图
-    thread = threading.Thread(
-        target=update_capture_async,
-        args=(video.id, video.source_type, video.device_id, video.channel)
-    )
-    thread.daemon = True
-    thread.start()
+    # 检查是否需要更新截图（避免频繁更新）
+    if video.should_update_capture():
+        # 启动后台线程异步更新截图
+        thread = threading.Thread(
+            target=update_capture_async,
+            args=(video.id, video.source_type, video.device_id, video.channel)
+        )
+        thread.daemon = True
+        thread.start()
+    else:
+        logger.debug(
+            f"视频源 {video.id} 截图更新间隔未到，跳过更新。"
+            f"上次更新: {video.capture_updated_at}"
+        )
 
     # 根据视频源类型选择对应的API调用获取视频地址和token
     if video.source_type == "YS":
@@ -129,7 +144,7 @@ def get_videosource(request, videosource_id: int, site_id: int):
             )
             output.token = get_access_token()
         except Exception as e:
-            print(f"获取萤石云视频地址或Token错误: {e}")
+            logger.error(f"获取萤石云视频地址或Token错误: {e}", exc_info=True)
 
     elif video.source_type == "VIM":
         # 华为IVM API
@@ -139,10 +154,10 @@ def get_videosource(request, videosource_id: int, site_id: int):
             )
             output.token = ivm_get_access_token()
         except Exception as e:
-            print(f"获取华为IVM视频地址或Token错误: {e}")
+            logger.error(f"获取华为IVM视频地址或Token错误: {e}", exc_info=True)
     else:
         # 不支持的视频源类型
-        print(f"不支持的视频源类型: {video.source_type}")
+        logger.warning(f"不支持的视频源类型: {video.source_type}")
 
     return output
 

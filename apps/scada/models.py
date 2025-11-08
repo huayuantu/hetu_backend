@@ -217,3 +217,20 @@ class SiteVideoSource(models.Model):
     )
     # 截图Base64数据
     capture = models.TextField(null=True)
+    # 截图最后更新时间
+    capture_updated_at = models.DateTimeField(null=True)
+
+    def should_update_capture(self, min_interval_seconds: int = 300) -> bool:
+        """判断是否需要更新截图
+        
+        Args:
+            min_interval_seconds: 最小更新间隔（秒），默认5分钟
+        
+        Returns:
+            True表示需要更新，False表示不需要更新
+        """
+        if not self.capture_updated_at:
+            return True
+        from django.utils import timezone
+        time_diff = (timezone.now() - self.capture_updated_at).total_seconds()
+        return time_diff >= min_interval_seconds
