@@ -234,3 +234,97 @@ class SiteVideoSource(models.Model):
         from django.utils import timezone
         time_diff = (timezone.now() - self.capture_updated_at).total_seconds()
         return time_diff >= min_interval_seconds
+
+
+# 平台类型选择
+PLATFORM_CHOICES = (
+    ("windows", "Windows"),
+    ("macos", "macOS"),
+    ("linux", "Linux"),
+)
+
+
+class AppUpdate(models.Model):
+    """应用更新版本模型"""
+
+    # 版本号，格式：major.minor.patch (例如: 1.0.0)
+    version = models.CharField(max_length=50, unique=True, db_index=True)
+    # 平台类型
+    platform = models.CharField(max_length=20, choices=PLATFORM_CHOICES, db_index=True)
+    # 下载地址（OSS URL或CDN URL）
+    download_url = models.URLField(max_length=500)
+    # Tauri签名（用于验证更新包）
+    signature = models.TextField()
+    # 更新说明/发布日志
+    release_notes = models.TextField(default="")
+    # 发布时间
+    published_at = models.DateTimeField(auto_now_add=True)
+    # 是否激活（只有激活的版本才会被返回）
+    is_active = models.BooleanField(default=True, db_index=True)
+    # 文件大小（字节）
+    file_size = models.BigIntegerField(default=0)
+    # 是否强制更新
+    force_update = models.BooleanField(default=False)
+    # 最低支持版本（低于此版本的客户端必须更新）
+    min_version = models.CharField(max_length=50, null=True, blank=True)
+
+    class Meta:
+        unique_together = [["version", "platform"]]
+        ordering = ["-published_at"]
+
+    def __str__(self):
+        return f"{self.platform} {self.version}"
+
+    def to_tauri_format(self) -> dict:
+        """转换为Tauri Updater API格式"""
+        return {
+            "version": self.version,
+            "notes": self.release_notes,
+            "pub_date": self.published_at.isoformat() + "Z",
+            "platforms": {
+                self.platform: {
+                    "signature": self.signature,
+                    "url": self.download_url,
+                }
+            },
+        }
+
+
+class UpdateLog(models.Model):
+    """更新日志模型（记录客户端更新行为）"""
+
+    # 客户端版本
+    client_version = models.CharField(max_length=50, db_index=True)
+    # 目标版本（要更新到的版本）
+    target_version = models.CharField(max_length=50, db_index=True)
+    # 平台类型
+    platform = models.CharField(max_length=20, choices=PLATFORM_CHOICES, db_index=True)
+    # 更新状态
+    status = models.CharField(
+        max_length=20,
+        choices=(
+            ("checking", "检查中"),
+            ("downloading", "下载中"),
+            ("installing", "安装中"),
+            ("success", "成功"),
+            ("failed", "失败"),
+            ("cancelled", "取消"),
+        ),
+        db_index=True,
+    )
+    # 错误信息（如果失败）
+    error_message = models.TextField(null=True, blank=True)
+    # 客户端IP地址
+    client_ip = models.GenericIPAddressField(null=True, blank=True)
+    # 记录时间
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    # 完成时间
+    completed_at = models.DateTimeField(null=True, blank=True)
+    # 元数据（JSON格式，存储额外信息）
+    meta = models.JSONField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.client_version} -> {self.target_version} ({self.status})"

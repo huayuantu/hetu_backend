@@ -135,5 +135,9 @@ IVM_USER_ID = env("IVM_USER_ID")
 IVM_ACCESS_KEY = env("IVM_ACCESS_KEY")
 IVM_SECRET_KEY = env("IVM_SECRET_KEY")
 
+# 阿里云OSS配置
+OSS_ENDPOINT = env("OSS_ENDPOINT", default="oss-cn-shanghai.aliyuncs.com")
+OSS_BUCKET_NAME = env("OSS_BUCKET_NAME", default="hetu-scada")
+
 # 自定义测试运行器，确保能发现tests/目录中的测试
 TEST_RUNNER = 'config.test_runner.CustomTestRunner'
