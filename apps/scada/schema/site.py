@@ -107,3 +107,10 @@ class SitePermit(Schema):
     site_id: int
     user_id: int
     permit: SitePermitType
+
+
+class SiteVariableCountOut(Schema):
+    """站点变量计数结构"""
+    
+    site_id: int
+    variable_count: int

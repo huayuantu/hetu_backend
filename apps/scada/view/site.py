@@ -1,4 +1,4 @@
-from django.db.models import Q
+from django.db.models import Q, Count
 from django.shortcuts import get_object_or_404
 from ninja import Router
 from ninja.errors import HttpError
@@ -13,6 +13,7 @@ from apps.scada.schema.site import (
     SiteStatisticIn,
     SiteStatisticOut,
     SiteStatisticValueOut,
+    SiteVariableCountOut,
 )
 from apps.scada.utils.promql import promql_query
 from apps.sys.models import User
@@ -315,24 +316,44 @@ def get_statistic_value(
 
     output = SiteStatisticValueOut.from_orm(statistic)
 
+    # 获取所有变量，按模块分组以进行批量查询
+    variables = statistic.variables.select_related("module").all()
+    
+    # 按模块分组变量
+    from collections import defaultdict
+    module_vars = defaultdict(list)
+    for v in variables:
+        output.variable_ids.append(v.id)
+        module_vars[v.module.module_number].append(v)
+
     values = []
     timestamp = 0
 
-    for v in statistic.variables.all():
-        output.variable_ids.append(v.id)
-
-        # 查询字符串
-        query_str = "grm_" + v.module.module_number + "_gauge"
-        query_str += '{name="' + v.name + '"}'
+    # 按模块批量查询 Prometheus
+    for module_number, vars_list in module_vars.items():
+        # 构建批量查询字符串：使用正则表达式匹配多个变量名
+        var_names = [v.name for v in vars_list]
+        query_str = "grm_" + module_number + "_gauge"
+        query_str += '{name=~"' + "|".join(var_names) + '"}'
 
         try:
             query_data = promql_query(query_str)
         except Exception:
             continue
 
-        for result in query_data["data"]["result"]:
-            timestamp = result["value"][0]
-            values.append(float(result["value"][1]))
+        # 从查询结果中提取值
+        result_dict = {}
+        for result in query_data.get("data", {}).get("result", []):
+            metric_name = result.get("metric", {}).get("name")
+            if metric_name:
+                result_dict[metric_name] = result.get("value", [0, 0])
+
+        # 匹配变量并累加值
+        for v in vars_list:
+            if v.name in result_dict:
+                value_data = result_dict[v.name]
+                timestamp = max(timestamp, int(value_data[0]))
+                values.append(float(value_data[1]))
 
     # 目前只支持累加
     output.value = sum(values)
@@ -411,3 +432,64 @@ def delete_statistic(request, site_id: int, statistic_id: int):
     statistic.delete()
 
     return "Ok"
+
+
+@router.get(
+    "/variables/count",
+    response=list[SiteVariableCountOut],
+    auth=AuthBearer(
+        [
+            ("scada:site:info", "x"),
+        ]
+    ),
+)
+@api_schema
+def get_variables_count(request, site_ids: str = None):
+    """批量获取多个站点的变量总数
+    
+    优化：使用一次查询获取所有站点的变量总数
+    site_ids: 逗号分隔的站点ID列表，如 "1,2,3"。如果不提供，返回所有站点
+    """
+    from apps.scada.models import Variable
+    from collections import defaultdict
+    
+    # 解析站点ID列表
+    if site_ids:
+        site_id_list = [int(sid.strip()) for sid in site_ids.split(',') if sid.strip()]
+        if not site_id_list:
+            return []
+    else:
+        # 如果没有提供站点ID，返回所有站点
+        site_id_list = None
+    
+    # 使用一次查询获取所有站点的变量总数
+    if site_id_list:
+        variable_counts = (
+            Variable.objects
+            .filter(module__site_id__in=site_id_list)
+            .values('module__site_id')
+            .annotate(variable_count=Count('id'))
+        )
+    else:
+        variable_counts = (
+            Variable.objects
+            .values('module__site_id')
+            .annotate(variable_count=Count('id'))
+        )
+    
+    # 按站点ID汇总
+    site_counts = defaultdict(int)
+    for item in variable_counts:
+        site_id = item['module__site_id']
+        count = item['variable_count']
+        site_counts[site_id] += count
+    
+    # 构建返回结果
+    result = []
+    for site_id, count in site_counts.items():
+        result.append(SiteVariableCountOut(
+            site_id=site_id,
+            variable_count=count
+        ))
+    
+    return result

@@ -415,44 +415,45 @@ def get_notify_count(request: HttpRequest, site_id: int = None):
     """获取通知计数
     
     如果提供了 site_id，则只统计该站点的通知
+    优化：使用一次查询计算所有统计值
     """
+    from django.db.models import Count, Q, OuterRef, Subquery, Max
+    
     # 基础查询
-    notifies = Notify.objects.all()
-    
-    # 如果提供了 site_id，过滤该站点的通知
     if site_id is not None:
         filter_title = str(site_id) + "::"
-        notifies = notifies.filter(title__startswith=filter_title)
-    
-    # 总数
-    total = notifies.count()
-    
-    # 已确认的数量
-    acknowledged = notifies.filter(ack=True).count()
-    
-    # 激活的数量：每个 external_id 的最新记录，且 title 以"触发警告"结尾，且 ack=False
-    if site_id is not None:
-        filter_title = str(site_id) + "::"
-        site_notifies = Notify.objects.filter(title__startswith=filter_title)
+        notifies = Notify.objects.filter(title__startswith=filter_title)
     else:
-        site_notifies = Notify.objects.all()
+        notifies = Notify.objects.all()
     
-    latest_record_ids = (
-        site_notifies.filter(
-            external_id=OuterRef("external_id")
+    # 使用 annotate 一次性计算所有统计值
+    # 1. 总数和已确认数可以直接计算
+    stats = notifies.aggregate(
+        total=Count('id'),
+        acknowledged=Count('id', filter=Q(ack=True))
+    )
+    
+    # 2. 激活的数量：每个 external_id 的最新记录，且 title 以"触发警告"结尾，且 ack=False
+    # 优化：使用窗口函数或优化的子查询
+    # 先找到每个 external_id 的最新记录ID
+    latest_notify_ids = (
+        notifies.values('external_id')
+        .annotate(
+            latest_id=Max('id'),
+            latest_notified_at=Max('notified_at')
         )
-        .order_by("-notified_at", "-id")
-        .values("id")[:1]
+        .values('latest_id')
     )
-    activated_notifies = Notify.objects.filter(
-        id=Subquery(latest_record_ids), 
-        title__endswith="触发警告", 
+    
+    # 然后查询这些最新记录中满足条件的
+    activated = notifies.filter(
+        id__in=latest_notify_ids,
+        title__endswith="触发警告",
         ack=False
-    )
-    activated = activated_notifies.count()
+    ).count()
     
     return NotifyCount(
-        total=total,
+        total=stats['total'] or 0,
         activated=activated,
-        acknowledged=acknowledged
+        acknowledged=stats['acknowledged'] or 0
     )
