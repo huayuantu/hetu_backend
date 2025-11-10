@@ -16,7 +16,7 @@ from ninja import Router
 from ninja.errors import HttpError
 
 from apps.scada.models import Notify, Rule, Variable
-from apps.scada.schema.alert import NotifyOut, RuleIn, RuleOut
+from apps.scada.schema.alert import NotifyCount, NotifyOut, RuleIn, RuleOut
 from apps.sys.utils import AuthBearer
 from utils.schema.base import api_schema
 from utils.schema.paginate import api_paginate
@@ -408,3 +408,51 @@ def ack_notify(request, site_id: int, notify_id: int):
         nofity.save()
 
     return "Ok"
+
+
+@api_schema
+def get_notify_count(request: HttpRequest, site_id: int = None):
+    """获取通知计数
+    
+    如果提供了 site_id，则只统计该站点的通知
+    """
+    # 基础查询
+    notifies = Notify.objects.all()
+    
+    # 如果提供了 site_id，过滤该站点的通知
+    if site_id is not None:
+        filter_title = str(site_id) + "::"
+        notifies = notifies.filter(title__startswith=filter_title)
+    
+    # 总数
+    total = notifies.count()
+    
+    # 已确认的数量
+    acknowledged = notifies.filter(ack=True).count()
+    
+    # 激活的数量：每个 external_id 的最新记录，且 title 以"触发警告"结尾，且 ack=False
+    if site_id is not None:
+        filter_title = str(site_id) + "::"
+        site_notifies = Notify.objects.filter(title__startswith=filter_title)
+    else:
+        site_notifies = Notify.objects.all()
+    
+    latest_record_ids = (
+        site_notifies.filter(
+            external_id=OuterRef("external_id")
+        )
+        .order_by("-notified_at", "-id")
+        .values("id")[:1]
+    )
+    activated_notifies = Notify.objects.filter(
+        id=Subquery(latest_record_ids), 
+        title__endswith="触发警告", 
+        ack=False
+    )
+    activated = activated_notifies.count()
+    
+    return NotifyCount(
+        total=total,
+        activated=activated,
+        acknowledged=acknowledged
+    )

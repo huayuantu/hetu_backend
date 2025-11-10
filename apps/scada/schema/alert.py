@@ -87,3 +87,14 @@ class NotifyOut(Schema):
     ack_at: datetime = None
     # 元数据
     meta: dict = {}
+
+
+class NotifyCount(Schema):
+    """通知计数结构"""
+
+    # 总数
+    total: int
+    # 激活的数量
+    activated: int
+    # 已确认的数量
+    acknowledged: int

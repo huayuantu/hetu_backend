@@ -1,6 +1,7 @@
 from ninja import Router
 
-from apps.scada.view.alert import create_notify
+from apps.scada.schema.alert import NotifyCount
+from apps.scada.view.alert import create_notify, get_notify_count
 from apps.scada.view.alert import router as alert_router
 from apps.scada.view.collector import router as collector_router
 from apps.scada.view.collector import service_discover
@@ -10,6 +11,7 @@ from apps.scada.view.site import router as site_router
 from apps.scada.view.update import router as update_router
 from apps.scada.view.variable import router as variable_router
 from apps.scada.view.videosource import router as videosource_router
+from apps.sys.utils import AuthBearer
 
 router = Router()
 
@@ -28,4 +30,13 @@ router.add_router("", update_router)
 # For prometheus
 router.add_api_operation("/collector/sd", ['GET'], service_discover)
 router.add_api_operation("/alert/notify", ['POST'], create_notify)
+
+# 通知计数路由（不在site前缀下）
+notify_router = Router()
+notify_router.get(
+    "/count",
+    response=NotifyCount,
+    auth=AuthBearer([("scada:alert:info", "x")]),
+)(get_notify_count)
+router.add_router("/notify", notify_router)
 
