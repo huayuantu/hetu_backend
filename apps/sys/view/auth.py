@@ -8,10 +8,11 @@ from captcha.image import ImageCaptcha
 from django.conf import settings
 from ninja import Router
 from ninja.errors import HttpError
+from pydantic import BaseModel
 
 from apps.sys.models import User
 from apps.sys.schemas import CaptchaOut, LoginIn, LoginOut
-from apps.sys.utils import get_captcha, get_password, get_token
+from apps.sys.utils import AuthBearer, get_captcha, get_password, get_token
 from utils.schema.base import api_schema
 
 router = Router()
@@ -70,3 +71,27 @@ def login(request, payload: LoginIn):
 @api_schema
 def logout(request):
     return "ok"
+
+
+class VerifyPasswordIn(BaseModel):
+    password: str
+
+
+@router.post("/verify-password", response=dict, auth=AuthBearer([]))
+@api_schema
+def verify_password(request, payload: VerifyPasswordIn):
+    """验证当前登录用户的密码（不需要验证码）"""
+    # request.auth 包含登录用户信息（由 AuthBearer 提供）
+    user_id = request.auth["id"]
+
+    # 验证密码
+    u = User.objects.filter(
+        id=user_id,
+        password=get_password(payload.password),
+        status=1,
+    ).first()
+
+    if not u:
+        return {"valid": False}
+
+    return {"valid": True}

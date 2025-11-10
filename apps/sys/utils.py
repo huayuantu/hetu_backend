@@ -45,8 +45,19 @@ class AuthBearer(HttpBearer):
         super().__init__()
 
     def authenticate(self, request: HttpRequest, token):
+        import logging
+        logger = logging.getLogger(__name__)
+        
         try:
+            # 调试日志：记录收到的 token（不记录完整内容，只记录长度和前缀）
+            logger.debug(f"AuthBearer received token (length: {len(token)}, prefix: {token[:20] if len(token) > 20 else token})")
+            
+            # HttpBearer 应该已经去掉了 "Bearer " 前缀，但如果还有，手动去掉
+            if token.startswith("Bearer "):
+                token = token[7:]
+            
             login_token = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+            logger.debug(f"AuthBearer decoded token successfully for user: {login_token.get('username', 'unknown')}")
 
             # 无需权限控制
             if not self._perms:
@@ -68,5 +79,6 @@ class AuthBearer(HttpBearer):
 
             # 所有权限验证都失败
             raise PermissionDenied("没有权限")
-        except Exception:
+        except Exception as e:
+            logger.warning(f"AuthBearer authentication failed: {type(e).__name__}: {str(e)}")
             return None
