@@ -53,6 +53,7 @@ INSTALLED_APPS = [
 # 安装的中间件
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "utils.middleware.cors.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
 ]
 
