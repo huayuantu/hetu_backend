@@ -114,3 +114,45 @@ class SiteVariableCountOut(Schema):
     
     site_id: int
     variable_count: int
+
+
+class DashboardCardConfig(Schema):
+    """Dashboard 卡片配置结构"""
+    
+    time_interval: str | None = None  # hour, day, week, month
+    aggregation: str | None = None  # avg, min, max, sum
+    precision: int | None = None
+    unit: str | None = None
+
+
+class DashboardCardLayout(Schema):
+    """Dashboard 卡片布局结构"""
+    
+    x: int | None = None
+    y: int | None = None
+
+
+class DashboardCardIn(Schema):
+    """Dashboard 卡片创建/更新结构"""
+    
+    variable_id: int
+    variable_name: str
+    card_type: str  # number, switch, line, bar
+    config: DashboardCardConfig = DashboardCardConfig()
+    position: int = 0
+    layout: DashboardCardLayout | None = None
+
+
+class DashboardCardOut(Schema):
+    """Dashboard 卡片返回结构"""
+    
+    id: int
+    site_id: int
+    variable_id: int
+    variable_name: str
+    card_type: str
+    config: dict
+    position: int
+    layout: dict | None = None
+    created_at: datetime
+    updated_at: datetime

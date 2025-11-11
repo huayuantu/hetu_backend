@@ -3,7 +3,7 @@ from django.shortcuts import get_object_or_404
 from ninja import Router
 from ninja.errors import HttpError
 
-from apps.scada.models import Site, SiteStatistic
+from apps.scada.models import Site, SiteStatistic, DashboardCard
 from apps.scada.schema.site import (
     SiteIn,
     SiteOptionOut,
@@ -14,6 +14,8 @@ from apps.scada.schema.site import (
     SiteStatisticOut,
     SiteStatisticValueOut,
     SiteVariableCountOut,
+    DashboardCardIn,
+    DashboardCardOut,
 )
 from apps.scada.utils.promql import promql_query
 from apps.sys.models import User
@@ -490,6 +492,110 @@ def get_variables_count(request, site_ids: str = None):
         result.append(SiteVariableCountOut(
             site_id=site_id,
             variable_count=count
+        ))
+    
+    return result
+
+
+@router.get(
+    "/{site_id}/dashboard/cards",
+    response=list[DashboardCardOut],
+    auth=AuthBearer(
+        [
+            ("scada:site:info", "x"),
+            ("scada:site:permit:{site_id}", "r"),
+        ]
+    ),
+)
+@api_schema
+def get_dashboard_cards(request, site_id: int):
+    """获取站点的 Dashboard 卡片列表"""
+    site = get_object_or_404(Site, id=site_id)
+    cards = DashboardCard.objects.filter(site=site).order_by("position", "id")
+    
+    result = []
+    for card in cards:
+        result.append(DashboardCardOut(
+            id=card.id,
+            site_id=card.site.id,
+            variable_id=card.variable_id,
+            variable_name=card.variable_name,
+            card_type=card.card_type,
+            config=card.config,
+            position=card.position,
+            layout=card.layout,
+            created_at=card.created_at,
+            updated_at=card.updated_at,
+        ))
+    
+    return result
+
+
+@router.post(
+    "/{site_id}/dashboard/cards",
+    response=list[DashboardCardOut],
+    auth=AuthBearer(
+        [
+            ("scada:site:edit", "x"),
+            ("scada:site:permit:{site_id}", "w"),
+        ]
+    ),
+)
+@api_schema
+def save_dashboard_cards(request, site_id: int, payload: list[DashboardCardIn]):
+    """保存站点的 Dashboard 卡片列表（批量保存/更新）"""
+    site = get_object_or_404(Site, id=site_id)
+    
+    # 删除所有现有卡片
+    DashboardCard.objects.filter(site=site).delete()
+    
+    # 创建新卡片
+    cards = []
+    for idx, card_data in enumerate(payload):
+        config_dict = {}
+        if card_data.config:
+            if card_data.config.time_interval:
+                config_dict["timeInterval"] = card_data.config.time_interval
+            if card_data.config.aggregation:
+                config_dict["aggregation"] = card_data.config.aggregation
+            if card_data.config.precision is not None:
+                config_dict["precision"] = card_data.config.precision
+            if card_data.config.unit:
+                config_dict["unit"] = card_data.config.unit
+        
+        layout_dict = None
+        if card_data.layout:
+            layout_dict = {}
+            if card_data.layout.x is not None:
+                layout_dict["x"] = card_data.layout.x
+            if card_data.layout.y is not None:
+                layout_dict["y"] = card_data.layout.y
+        
+        card = DashboardCard.objects.create(
+            site=site,
+            variable_id=card_data.variable_id,
+            variable_name=card_data.variable_name,
+            card_type=card_data.card_type,
+            config=config_dict,
+            position=card_data.position if card_data.position is not None else idx,
+            layout=layout_dict,
+        )
+        cards.append(card)
+    
+    # 返回保存的卡片
+    result = []
+    for card in cards:
+        result.append(DashboardCardOut(
+            id=card.id,
+            site_id=card.site.id,
+            variable_id=card.variable_id,
+            variable_name=card.variable_name,
+            card_type=card.card_type,
+            config=card.config,
+            position=card.position,
+            layout=card.layout,
+            created_at=card.created_at,
+            updated_at=card.updated_at,
         ))
     
     return result

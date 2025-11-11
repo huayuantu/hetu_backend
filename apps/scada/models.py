@@ -329,3 +329,35 @@ class UpdateLog(models.Model):
 
     def __str__(self):
         return f"{self.client_version} -> {self.target_version} ({self.status})"
+
+
+class DashboardCard(models.Model):
+    """Dashboard 卡片模型"""
+
+    # 所属站点
+    site = models.ForeignKey(Site, on_delete=models.CASCADE, related_name="dashboard_cards")
+    # 变量ID
+    variable_id = models.IntegerField()
+    # 变量名称
+    variable_name = models.CharField(max_length=255)
+    # 卡片类型：number, switch, line, bar
+    card_type = models.CharField(max_length=20)
+    # 配置信息（JSON格式）
+    config = models.JSONField(default=dict)
+    # 位置（排序用）
+    position = models.IntegerField(default=0)
+    # 布局信息（可选，JSON格式）
+    layout = models.JSONField(null=True, blank=True)
+    # 创建时间
+    created_at = models.DateTimeField(auto_now_add=True)
+    # 更新时间
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["position", "id"]
+        indexes = [
+            models.Index(fields=["site", "position"]),
+        ]
+
+    def __str__(self):
+        return f"DashboardCard: {self.variable_name} ({self.card_type})"
