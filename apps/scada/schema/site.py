@@ -51,6 +51,8 @@ class SiteOptionOut(Schema):
     longitude: float = 114.305215
     # 默认武汉市的纬度
     latitude: float = 30.592849
+    # 权限：r 表示只读，w 表示读写
+    permit: str | None = None
 
 
 class StaticMethod(str, Enum):
@@ -137,6 +139,7 @@ class DashboardCardIn(Schema):
     
     variable_id: int
     variable_name: str
+    title: str = ""  # 卡片标题，默认为空（前端会使用变量名称作为默认值）
     card_type: str  # number, switch, line, bar
     config: DashboardCardConfig = DashboardCardConfig()
     position: int = 0
@@ -150,6 +153,7 @@ class DashboardCardOut(Schema):
     site_id: int
     variable_id: int
     variable_name: str
+    title: str  # 卡片标题
     card_type: str
     config: dict
     position: int

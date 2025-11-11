@@ -142,3 +142,21 @@ OSS_BUCKET_NAME = env("OSS_BUCKET_NAME", default="hetu-scada")
 
 # 自定义测试运行器，确保能发现tests/目录中的测试
 TEST_RUNNER = 'config.test_runner.CustomTestRunner'
+
+# 日志配置 - 禁用 Casbin 的调试日志
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'loggers': {
+        'casbin': {
+            'handlers': [],
+            'level': 'CRITICAL',
+            'propagate': False,
+        },
+        'casbin.persist': {
+            'handlers': [],
+            'level': 'CRITICAL',
+            'propagate': False,
+        },
+    },
+}

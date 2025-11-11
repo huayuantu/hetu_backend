@@ -21,10 +21,10 @@ def _get_authenticated_user(request):
         raise HttpError(401, "用户未认证或会话已过期") from exc
 
 
-@router.post("", response=MessageOut, auth=AuthBearer([("sys:user:edit", "x")]))
+@router.post("", response=MessageOut, auth=AuthBearer([]))
 @api_schema
 def send_message(request, payload: MessageIn):
-    """发送消息"""
+    """发送消息（只需要登录）"""
     sender = _get_authenticated_user(request)
 
     # 验证接收者是否存在
@@ -66,7 +66,7 @@ def send_message(request, payload: MessageIn):
     )
 
 
-@router.get("", response=list[MessageOut], auth=AuthBearer([("sys:user:edit", "x")]))
+@router.get("", response=list[MessageOut], auth=AuthBearer([]))
 @api_schema
 def get_messages(
     request,
@@ -75,7 +75,7 @@ def get_messages(
     limit: int = 100,
     offset: int = 0,
 ):
-    """获取当前用户的消息列表"""
+    """获取当前用户的消息列表（只需要登录）"""
     user = _get_authenticated_user(request)
 
     # 查询接收者为当前用户的消息
@@ -118,10 +118,10 @@ def get_messages(
     return result
 
 
-@router.put("/{message_id}/read", response=MessageOut, auth=AuthBearer([("sys:user:edit", "x")]))
+@router.put("/{message_id}/read", response=MessageOut, auth=AuthBearer([]))
 @api_schema
 def mark_message_read(request, message_id: int):
-    """标记消息为已读"""
+    """标记消息为已读（只需要登录）"""
     user = _get_authenticated_user(request)
 
     try:
@@ -155,10 +155,10 @@ def mark_message_read(request, message_id: int):
     )
 
 
-@router.delete("/{message_id}", response=str, auth=AuthBearer([("sys:user:edit", "x")]))
+@router.delete("/{message_id}", response=str, auth=AuthBearer([]))
 @api_schema
 def delete_message(request, message_id: int):
-    """删除消息"""
+    """删除消息（只需要登录）"""
     user = _get_authenticated_user(request)
 
     try:
@@ -170,10 +170,10 @@ def delete_message(request, message_id: int):
     return "Ok"
 
 
-@router.get("/unread-count", response=int, auth=AuthBearer([("sys:user:edit", "x")]))
+@router.get("/unread-count", response=int, auth=AuthBearer([]))
 @api_schema
 def get_unread_count(request):
-    """获取未读消息数量"""
+    """获取未读消息数量（只需要登录）"""
     user = _get_authenticated_user(request)
 
     count = Message.objects.filter(receiver=user, status__in=["sent", "unread"]).count()

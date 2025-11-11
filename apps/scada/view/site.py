@@ -159,18 +159,57 @@ def create_site(request, payload: SiteIn):
 )
 @api_schema
 def get_site_option_list(request):
-    """选项列表"""
-
-    # Note: permit filtering was disabled, returning all sites
-    # enforcer = get_enforcer()
-    # policies = enforcer.get_filtered_policy(0, request.auth["username"])
-    # permit_ids = [
-    #     int(policy[1].split(":")[-1])
-    #     for policy in policies
-    #     if policy[1].startswith("scada:site:permit:")
-    # ]
-    # return Site.objects.filter(id__in=permit_ids)
-    return Site.objects.all()
+    """选项列表，返回用户有权限的站点及其权限信息"""
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    enforcer = get_enforcer()
+    username = request.auth["username"]
+    
+    logger.info(f"[站点权限] 用户 {username} 请求站点列表")
+    
+    # 获取当前用户对所有站点的权限
+    policies = [
+        policy
+        for policy in enforcer.get_filtered_policy(0, username)
+        if policy[1].startswith("scada:site:permit:")
+    ]
+    
+    logger.info(f"[站点权限] 用户 {username} 的 Casbin 策略数量: {len(policies)}")
+    for policy in policies:
+        logger.info(f"[站点权限] 策略: {policy}")
+    
+    # 构建站点权限映射：site_id -> permission (r 或 w)
+    site_permissions: dict[int, str] = {}
+    for _, target, permission in policies:
+        site_id = int(target.split(":")[-1])
+        # w 权限优先于 r 权限
+        if permission == "w":
+            site_permissions[site_id] = "w"
+            logger.info(f"[站点权限] 站点 {site_id}: 读写权限 (w)")
+        elif permission == "r" and site_id not in site_permissions:
+            site_permissions[site_id] = "r"
+            logger.info(f"[站点权限] 站点 {site_id}: 只读权限 (r)")
+    
+    # 获取所有站点
+    sites = Site.objects.all()
+    
+    # 构建返回结果，包含权限信息
+    result = []
+    for site in sites:
+        permit = site_permissions.get(site.id, None)
+        logger.info(f"[站点权限] 站点 {site.id} ({site.name}): 权限={permit}")
+        result.append(SiteOptionOut(
+            id=site.id,
+            name=site.name,
+            status=site.status,
+            longitude=site.longitude,
+            latitude=site.latitude,
+            permit=permit
+        ))
+    
+    logger.info(f"[站点权限] 用户 {username} 返回 {len(result)} 个站点")
+    return result
 
 
 @router.get(
@@ -520,6 +559,7 @@ def get_dashboard_cards(request, site_id: int):
             site_id=card.site.id,
             variable_id=card.variable_id,
             variable_name=card.variable_name,
+            title=card.title if card.title else card.variable_name,  # 如果没有标题，使用变量名称
             card_type=card.card_type,
             config=card.config,
             position=card.position,
@@ -575,6 +615,7 @@ def save_dashboard_cards(request, site_id: int, payload: list[DashboardCardIn]):
             site=site,
             variable_id=card_data.variable_id,
             variable_name=card_data.variable_name,
+            title=card_data.title if card_data.title else card_data.variable_name,  # 如果没有标题，使用变量名称
             card_type=card_data.card_type,
             config=config_dict,
             position=card_data.position if card_data.position is not None else idx,
@@ -590,6 +631,7 @@ def save_dashboard_cards(request, site_id: int, payload: list[DashboardCardIn]):
             site_id=card.site.id,
             variable_id=card.variable_id,
             variable_name=card.variable_name,
+            title=card.title if card.title else card.variable_name,  # 如果没有标题，使用变量名称
             card_type=card.card_type,
             config=card.config,
             position=card.position,

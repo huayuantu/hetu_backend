@@ -1,4 +1,5 @@
 import os
+import logging
 
 from django.apps import AppConfig
 from django.conf import settings
@@ -13,3 +14,12 @@ class AuthConfig(AppConfig):
         from apps.sys.rolemanager import RoleManager
 
         setattr(settings, "CASBIN_ROLE_MANAGER", RoleManager())  # noqa: B010
+        
+        # 禁用 Casbin 的调试日志
+        casbin_logger = logging.getLogger("casbin")
+        casbin_logger.setLevel(logging.CRITICAL)
+        casbin_logger.disabled = True
+        
+        persist_logger = logging.getLogger("casbin.persist")
+        persist_logger.setLevel(logging.CRITICAL)
+        persist_logger.disabled = True

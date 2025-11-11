@@ -340,6 +340,8 @@ class DashboardCard(models.Model):
     variable_id = models.IntegerField()
     # 变量名称
     variable_name = models.CharField(max_length=255)
+    # 卡片标题（自定义，默认为变量名称）
+    title = models.CharField(max_length=255, default="")
     # 卡片类型：number, switch, line, bar
     card_type = models.CharField(max_length=20)
     # 配置信息（JSON格式）

@@ -72,7 +72,7 @@ def get_all_subdepartments(dept_id):
 @router.get(
     "",
     response=list[UserListOut],
-    auth=AuthBearer([("sys:user:edit", "x")]),
+    auth=AuthBearer([]),
 )
 @api_paginate
 def get_user_list(
@@ -81,7 +81,7 @@ def get_user_list(
     status: int | None = None,
     dept_id: int | None = None,
 ):
-    """获取用户列表"""
+    """获取用户列表（只需要登录，用于发送消息时选择接收者）"""
 
     user_list: list[UserListOut] = []
 

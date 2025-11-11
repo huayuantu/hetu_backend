@@ -11,6 +11,39 @@ from ninja.security import HttpBearer
 
 from apps.sys.models import User
 
+# 关闭 Casbin 的调试日志
+import logging
+
+# 创建一个过滤器来过滤 Casbin 的 Request 日志
+class CasbinLogFilter(logging.Filter):
+    def filter(self, record):
+        # 过滤掉包含 "Request:" 的日志
+        if hasattr(record, 'msg') and isinstance(record.msg, str):
+            if 'Request:' in record.msg:
+                return False
+        if hasattr(record, 'getMessage'):
+            msg = record.getMessage()
+            if 'Request:' in msg:
+                return False
+        return True
+
+# 禁用 Casbin 的所有日志输出
+casbin_logger = logging.getLogger("casbin")
+casbin_logger.setLevel(logging.CRITICAL)  # 设置为 CRITICAL 级别，几乎不输出任何日志
+casbin_logger.disabled = True  # 完全禁用该 logger
+casbin_logger.addFilter(CasbinLogFilter())  # 添加过滤器
+
+# 也尝试禁用可能的其他 logger 名称
+persist_logger = logging.getLogger("casbin.persist")
+persist_logger.setLevel(logging.CRITICAL)
+persist_logger.disabled = True
+persist_logger.addFilter(CasbinLogFilter())
+
+# 如果日志是通过根 logger 输出的，也添加过滤器
+root_logger = logging.getLogger()
+for handler in root_logger.handlers:
+    handler.addFilter(CasbinLogFilter())
+
 
 def get_enforcer() -> Enforcer:
     return enforcer
