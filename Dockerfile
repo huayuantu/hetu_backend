@@ -6,9 +6,9 @@ RUN apt-get update && apt-get install -y \
   && rm -rf /var/lib/apt/lists/*
 
 # 安装 uv
-RUN pip install uv && \
-    which uv || echo "uv not found in PATH" && \
-    find /usr -name uv 2>/dev/null || true
+RUN pip install uv
+# 确保 uv 在 PATH 中
+ENV PATH="/usr/local/bin:$PATH"
 
 RUN apt-get update && apt-get install -y \
     libpq-dev \
