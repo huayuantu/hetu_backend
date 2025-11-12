@@ -16,6 +16,51 @@ dev-port port:
 prod:
     gunicorn config.wsgi:application -c gunicorn_config.py
 
+# 初始化 Docker Buildx（如果不存在）
+docker-buildx-setup:
+    @docker buildx create --name hetu-builder --use 2>/dev/null || docker buildx use hetu-builder || true
+    @docker buildx inspect --bootstrap
+
+# 构建 Docker 镜像（base）- 单平台（本地测试用）
+docker-build-base version="latest":
+    docker build --target base -t hetu-backend:{{version}}-base .
+
+# 构建 Docker 镜像（collector）- 单平台（本地测试用）
+docker-build-collector version="latest":
+    docker build --target collector -t hetu-backend:{{version}}-collector .
+
+# 构建所有 Docker 镜像 - 单平台（本地测试用）
+# 使用方法: just docker-build v1.0.0 或 just docker-build
+docker-build version="latest":
+    docker build --target base -t hetu-backend:{{version}}-base .
+    docker build --target collector -t hetu-backend:{{version}}-collector .
+
+# 构建多平台 Docker 镜像（base）- 仅构建，不加载（多平台镜像无法直接加载）
+docker-build-base-multi version="latest" platforms="linux/amd64,linux/arm64":
+    @docker buildx create --name hetu-builder --use 2>/dev/null || docker buildx use hetu-builder || true
+    @docker buildx inspect --bootstrap
+    docker buildx build --platform {{platforms}} --target base -t hetu-backend:{{version}}-base .
+
+# 构建多平台 Docker 镜像（collector）- 仅构建，不加载
+docker-build-collector-multi version="latest" platforms="linux/amd64,linux/arm64":
+    @docker buildx create --name hetu-builder --use 2>/dev/null || docker buildx use hetu-builder || true
+    @docker buildx inspect --bootstrap
+    docker buildx build --platform {{platforms}} --target collector -t hetu-backend:{{version}}-collector .
+
+# 构建所有多平台 Docker 镜像 - 仅构建，不加载
+docker-build-multi version="latest" platforms="linux/amd64,linux/arm64":
+    @docker buildx create --name hetu-builder --use 2>/dev/null || docker buildx use hetu-builder || true
+    @docker buildx inspect --bootstrap
+    docker buildx build --platform {{platforms}} --target base -t hetu-backend:{{version}}-base .
+    docker buildx build --platform {{platforms}} --target collector -t hetu-backend:{{version}}-collector .
+
+# 构建并推送多平台 Docker 镜像到仓库
+docker-build-push version="latest" registry="crpi-uuz3ex5s26cqqb5m.cn-shanghai.personal.cr.aliyuncs.com" image_name="hetu_xinhong/hetu-backend" platforms="linux/amd64,linux/arm64":
+    @docker buildx create --name hetu-builder --use 2>/dev/null || docker buildx use hetu-builder || true
+    @docker buildx inspect --bootstrap
+    docker buildx build --platform {{platforms}} --target base -t {{registry}}/{{image_name}}:{{version}}-base --push .
+    docker buildx build --platform {{platforms}} --target collector -t {{registry}}/{{image_name}}:{{version}}-collector --push .
+
 # 数据库迁移
 migrate:
     python manage.py makemigrations
@@ -107,8 +152,25 @@ help:
     @echo "  just lint             - 完整代码质量检查"
     @echo ""
     @echo "部署命令:"
-    @echo "  just prod             - 启动生产服务器"
-    @echo "  just collectstatic    - 收集静态文件"
+    @echo "  just prod                    - 启动生产服务器"
+    @echo "  just collectstatic           - 收集静态文件"
+    @echo ""
+    @echo "Docker 命令:"
+    @echo "  单平台构建（本地测试）:"
+    @echo "    just docker-build            - 构建所有镜像（默认 latest）"
+    @echo "    just docker-build-base      - 构建 base 镜像"
+    @echo "    just docker-build-collector - 构建 collector 镜像"
+    @echo ""
+    @echo "  多平台构建（ARM + x86）:"
+    @echo "    just docker-build-multi      - 构建所有多平台镜像"
+    @echo "    just docker-build-base-multi - 构建 base 多平台镜像"
+    @echo "    just docker-build-collector-multi - 构建 collector 多平台镜像"
+    @echo "    just docker-build-push       - 构建并推送多平台镜像到仓库"
+    @echo ""
+    @echo "  示例:"
+    @echo "    just docker-build version=1.0.0"
+    @echo "    just docker-build-multi version=v1.0.0 platforms=linux/amd64,linux/arm64"
+    @echo "    just docker-build-push version=v1.0.0"
     @echo ""
     @echo "维护命令:"
     @echo "  just clean            - 清理缓存文件"

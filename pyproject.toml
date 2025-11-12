@@ -6,7 +6,7 @@ authors = [
     {name = "Huayuan Tu", email = "tuhuayuan@gmail.com"}
 ]
 readme = "README.md"
-requires-python = ">=3.9,<3.13"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "django>=4.2.6,<5.0",
     "django-ninja>=0.22.2,<1.0",

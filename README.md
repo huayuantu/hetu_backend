@@ -1,6 +1,6 @@
 # HeTu Backend 🏭
 
-[![Python Version](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/)
+[![Python Version](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
 [![Django Version](https://img.shields.io/badge/Django-4.2+-green.svg)](https://www.djangoproject.com/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -34,19 +34,27 @@
 - **MQTT** - 物联网消息队列
 
 ### 开发工具
+- **Just** - 命令运行器，统一项目命令接口
+- **uv** - Python 包管理器（快速依赖管理）
 - **Gunicorn** - WSGI服务器
 - **Supervisor** - 进程管理
 - **Docker & Docker Compose** - 容器化部署
 - **MyPy & Ruff** - 代码质量检查
 
+### CI/CD
+- **GitHub Actions** - 自动化构建和部署
+- **Docker Registry** - 容器镜像仓库
+- **自动化部署** - 支持多环境部署
+
 ## 🚀 快速开始
 
 ### 📋 环境要求
 
-- Python 3.9+
+- Python 3.12+
 - PostgreSQL 13+
 - Redis 7+
 - Docker & Docker Compose
+- [Just](https://github.com/casey/just) - 命令运行器（推荐）
 
 ### 🔧 安装步骤
 
@@ -66,28 +74,38 @@
 
 3. **安装依赖**
    ```bash
+   # 使用 uv（推荐，更快）
+   uv sync
+   
+   # 或使用 pip
    pip install -e .
    ```
 
 4. **配置环境变量**
    ```bash
-   cp .env.example .env
+   cp env.example .env
    # 编辑 .env 文件，配置数据库和其他服务
    ```
 
 5. **数据库迁移**
    ```bash
-   python manage.py migrate
+   just migrate
    ```
 
 6. **创建超级用户**
    ```bash
-   python manage.py create_admin
+   # 使用自定义命令（推荐，需要密码和部门参数）
+   python manage.py create_admin <password> <department>
+   
+   # 或使用 Django 默认命令（交互式）
+   just createsuperuser
    ```
 
 7. **启动开发服务器**
    ```bash
-   python manage.py runserver
+   just dev
+   # 或指定端口
+   just dev-port 8000
    ```
 
 ### 🐳 Docker部署
@@ -99,6 +117,24 @@ docker-compose -f docker-compose.prod.yml up -d
 # 开发环境部署
 docker-compose -f docker-compose.local.yml up -d
 ```
+
+### 🚀 CI/CD 自动化部署
+
+项目已配置 GitHub Actions 自动化部署，支持通过 Git tag 触发自动构建和部署。
+
+**快速部署**:
+1. 配置 GitHub Secrets（参考 `docs/cicd-setup.md`）
+2. 创建并推送版本 tag：
+   ```bash
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+3. GitHub Actions 会自动构建 Docker 镜像并部署到服务器
+
+详细说明请参考：
+- `docs/cicd-setup.md` - CI/CD 配置文档
+- `docs/cicd-quick-reference.md` - 快速参考
+- `docs/multi-environment-deployment.md` - 多环境部署指南
 
 ## 📁 项目结构
 
@@ -128,10 +164,23 @@ hetu_backend/
 │   ├── prometheus/          # Prometheus配置
 │   ├── alertmanager/        # 告警管理配置
 │   └── supervisor/          # 进程管理配置
-├── .env                     # 环境变量配置
-├── docker-compose.yml       # Docker编排
+├── scripts/                 # 部署脚本
+│   ├── deploy.sh            # 部署脚本
+│   ├── generate-deploy-configs.sh  # 配置生成脚本
+│   └── init-deploy-config.sh        # 配置初始化脚本
+├── .github/workflows/       # GitHub Actions 工作流
+│   └── deploy.yml           # CI/CD 部署配置
+├── docs/                    # 文档目录
+│   ├── cicd-setup.md        # CI/CD 配置文档
+│   ├── cicd-quick-reference.md  # CI/CD 快速参考
+│   └── ...                  # 其他文档
+├── env.example              # 环境变量示例文件
+├── env.template             # 环境变量模板（用于 CI/CD）
+├── docker-compose.prod.yml  # 生产环境 Docker 编排
+├── docker-compose.local.yml # 开发环境 Docker 编排
 ├── Dockerfile               # Docker镜像
-├── pyproject.toml           # 项目配置
+├── pyproject.toml           # 项目配置（使用 uv）
+├── justfile                 # Just 命令定义
 └── manage.py               # Django管理脚本
 ```
 
@@ -188,10 +237,11 @@ DATABASE_URL=mysql://username:password@localhost:3306/hetu_db
 ### 数据库迁移
 
 ```bash
-# 生成迁移文件
-python manage.py makemigrations
+# 生成迁移文件并执行迁移（推荐）
+just migrate
 
-# 执行迁移
+# 或使用传统命令
+python manage.py makemigrations
 python manage.py migrate
 
 # 显示迁移状态
@@ -203,10 +253,14 @@ python manage.py showmigrations
 ### 运行测试
 
 ```bash
-# 运行所有测试
-python manage.py test
+# 运行所有测试（推荐）
+just test
 
 # 运行特定应用的测试
+just test-app apps.scada
+
+# 或使用传统命令
+python manage.py test
 python manage.py test apps.scada
 
 # 运行带覆盖率的测试
@@ -223,26 +277,71 @@ coverage report
 
 ## 🚀 部署
 
-### 生产环境部署
+### 自动化部署（推荐）
 
-1. **配置环境变量**
+项目已配置 GitHub Actions CI/CD，支持自动化部署：
+
+1. **配置 GitHub Secrets**（参考 `docs/cicd-setup.md`）
+2. **创建版本 tag 触发部署**:
    ```bash
-   cp .env.example .env.prod
-   # 编辑生产环境配置
+   git tag v1.0.0
+   git push origin v1.0.0
+   ```
+3. GitHub Actions 会自动：
+   - 构建 Docker 镜像
+   - 推送到镜像仓库
+   - 同步配置文件到部署服务器
+   - 生成 `.env` 文件
+   - 部署服务
+
+详细文档：
+- `docs/cicd-setup.md` - 完整配置指南
+- `docs/cicd-quick-reference.md` - 快速参考
+- `docs/multi-environment-deployment.md` - 多环境部署
+
+### 手动部署
+
+#### 生产环境部署
+
+1. **准备部署服务器**
+   ```bash
+   # 创建部署目录
+   mkdir -p /opt/hetu-backend
+   chmod 755 /opt/hetu-backend
    ```
 
-2. **构建和启动服务**
+2. **配置环境变量**
+   ```bash
+   # 在部署服务器上创建 .env 文件
+   # 参考 env.example 文件
+   ```
+
+3. **构建和启动服务**
    ```bash
    export HETU_VERSION=v1.0.0
+   export REGISTRY="your-registry"
+   export IMAGE_NAME="your-image-name"
    docker-compose -f docker-compose.prod.yml up -d
    ```
 
-3. **服务说明**
-   - **API服务**: `http://localhost:8000`
-   - **Prometheus**: `http://localhost:9090`
-   - **AlertManager**: `http://localhost:9093`
-   - **PushGateway**: `http://localhost:9091`
-   - **PgAdmin**: `http://localhost:5050`
+#### Docker Compose 部署
+
+```bash
+# 生产环境部署
+docker-compose -f docker-compose.prod.yml up -d
+
+# 开发环境部署
+docker-compose -f docker-compose.local.yml up -d
+```
+
+### 服务说明
+
+部署后的服务地址：
+- **API服务**: `http://localhost:8000`
+- **Prometheus**: `http://localhost:9090`
+- **AlertManager**: `http://localhost:9093`
+- **PushGateway**: `http://localhost:9091`
+- **PgAdmin**: `http://localhost:5050`
 
 ### 监控和日志
 
@@ -253,25 +352,78 @@ coverage report
 
 ## 🔧 开发环境设置
 
+### Just 命令工具
+
+项目使用 [Just](https://github.com/casey/just) 作为命令运行器，提供统一的命令接口。
+
+**查看所有可用命令**:
+```bash
+just
+# 或
+just help
+```
+
+**常用命令**:
+```bash
+# 开发
+just dev              # 启动开发服务器
+just dev-port 8000    # 启动开发服务器（指定端口）
+just migrate          # 数据库迁移
+just test             # 运行测试
+just test-app apps.scada  # 运行指定应用的测试
+
+# 代码质量
+just check            # 代码格式检查
+just fix              # 代码格式修复
+just format           # 代码格式化
+just lint             # 完整代码质量检查（check + format）
+
+# 部署
+just prod             # 启动生产服务器
+just collectstatic    # 收集静态文件
+
+# 维护
+just clean            # 清理缓存文件
+just status           # 查看项目状态
+```
+
 ### 代码质量工具
 
 ```bash
-# 代码格式化
+# 使用 Just 命令（推荐）
+just lint             # 完整代码质量检查
+just check            # 代码格式检查
+just format           # 代码格式化
+
+# 或使用传统命令
 ruff format .
-
-# 代码检查
 ruff check .
-
-# 类型检查
 mypy .
 ```
 
 ### 开发工具
 
+- **Just**: 命令运行器（推荐安装）
+- **uv**: Python 包管理器（推荐，更快）
 - **VS Code**: 推荐IDE
 - **REST Client**: API测试工具
 - **PgAdmin**: PostgreSQL管理
 - **Redis Commander**: Redis管理
+
+### 安装 Just
+
+```bash
+# macOS
+brew install just
+
+# Linux
+curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to ~/bin
+
+# Windows
+scoop install just
+# 或
+choco install just
+```
 
 ## 🤝 贡献指南
 

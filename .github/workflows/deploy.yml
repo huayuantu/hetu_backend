@@ -42,11 +42,12 @@ jobs:
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
 
-      - name: Build and push base image
+      - name: Build and push base image (multi-platform)
         uses: docker/build-push-action@v5
         with:
           context: .
           target: base
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag_version.outputs.version }}-base
@@ -54,11 +55,12 @@ jobs:
           cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-base
           cache-to: type=inline
 
-      - name: Build and push collector image
+      - name: Build and push collector image (multi-platform)
         uses: docker/build-push-action@v5
         with:
           context: .
           target: collector
+          platforms: linux/amd64,linux/arm64
           push: true
           tags: |
             ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag_version.outputs.version }}-collector
