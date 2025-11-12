@@ -97,7 +97,7 @@ services:
   collector:
     # 如果设置了 REGISTRY 和 IMAGE_NAME，使用远程镜像；否则使用本地构建
     image: ${REGISTRY:+${REGISTRY}/}${IMAGE_NAME:-hetu}:${HETU_VERSION:-latest}-collector
-    command: supervisord -n  -c /etc/supervisor/supervisord.conf
+    command: uv run supervisord -n  -c /etc/supervisor/supervisord.conf
     hostname: hetu-collector
     volumes:
       - ./deploy/supervisor/supervisord.conf:/etc/supervisor/supervisord.conf
