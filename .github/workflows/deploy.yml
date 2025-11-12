@@ -217,9 +217,13 @@ jobs:
             export IMAGE_NAME="${{ env.IMAGE_NAME }}"
             export HETU_VERSION="${{ steps.tag_version.outputs.version }}"
             
-            # 更新 docker compose 服务（使用 Docker Compose V2）
-            docker compose -f docker-compose.prod.yml pull
+            # 只更新自定义服务（api 和 collector），跳过第三方服务的 pull
+            # 第三方服务（redis, postgres, prometheus 等）如果不存在会自动拉取
+            # 使用 --no-deps 避免拉取依赖服务的镜像
             docker compose -f docker-compose.prod.yml up -d --no-deps api collector
+            
+            # 如果需要确保第三方服务镜像存在，可以单独拉取（可选）
+            # docker compose -f docker-compose.prod.yml pull redis postgres prometheus pushgateway alertmanager pgadmin || true
             
             # 清理旧镜像（可选，保留最近 3 个版本）
             docker image prune -f
