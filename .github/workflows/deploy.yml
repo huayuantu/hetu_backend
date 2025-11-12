@@ -1,0 +1,198 @@
+name: Build and Deploy
+
+on:
+  push:
+    tags:
+      - 'v*'  # 触发所有以 v 开头的 tag，如 v1.0.0, v1.2.3
+
+env:
+  REGISTRY: crpi-uuz3ex5s26cqqb5m.cn-shanghai.personal.cr.aliyuncs.com
+  IMAGE_NAME: hetu_xinhong/hetu-backend
+  # 默认环境变量（可以通过 secrets 覆盖）
+  ALERTMANAGER_WEBHOOK_URL: http://hetu-api:8000/api/scada/alert/notify
+  PROMETHEUS_SD_URL: http://hetu-api:8000/api/scada/collector/sd
+  PROMETHEUS_PUSHGATEWAY_TARGET: hetu-pushgateway:9091
+  PROMETHEUS_ALERTMANAGER_TARGET: hetu-alertmanager:9093
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Extract version from tag
+        id: tag_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          VERSION=${VERSION#v}  # 去掉 v 前缀，如 v1.0.0 -> 1.0.0
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "full_tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+          echo "Full tag: ${GITHUB_REF#refs/tags/}"
+
+      - name: Login to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
+
+      - name: Build and push base image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: base
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag_version.outputs.version }}-base
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-base
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-base
+          cache-to: type=inline
+
+      - name: Build and push collector image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: collector
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag_version.outputs.version }}-collector
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-collector
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest-collector
+          cache-to: type=inline
+
+      - name: Generate .env file
+        run: |
+          # 安装 envsubst（如果不存在）
+          if ! command -v envsubst &> /dev/null; then
+            sudo apt-get update && sudo apt-get install -y gettext-base
+          fi
+          
+          # 设置环境变量（从 GitHub Secrets 读取，如果没有则使用默认值）
+          export DEBUG="${{ secrets.DEBUG || 'False' }}"
+          export SECRET_KEY="${{ secrets.SECRET_KEY }}"
+          export ALLOWED_HOSTS="${{ secrets.ALLOWED_HOSTS || 'your-domain.com,localhost' }}"
+          export UPLOAD_ROOT="${{ secrets.UPLOAD_ROOT || '/etc/api/uploads' }}"
+          export DATABASE_URL="${{ secrets.DATABASE_URL }}"
+          export PROMETHEUS_URL="${{ secrets.PROMETHEUS_URL || 'http://hetu-tsdb:9090' }}"
+          export PUSHGATEWAY_URL="${{ secrets.PUSHGATEWAY_URL || 'http://hetu-pushgateway:9091' }}"
+          export PROMETHEUS_RULES_DIR="${{ secrets.PROMETHEUS_RULES_DIR || '/etc/prometheus/include' }}"
+          export SUPERVISOR_XMLRPC_URL="${{ secrets.SUPERVISOR_XMLRPC_URL || 'http://hetu-collector:9001/RPC2' }}"
+          export SUPERVISOR_COLLECTOR_COMMAND="${{ secrets.SUPERVISOR_COLLECTOR_COMMAND || 'python -m apps.scada.script.collector' }}"
+          export SUPERVISOR_COLLECTOR_ADVERTISE="${{ secrets.SUPERVISOR_COLLECTOR_ADVERTISE || 'hetu-collector' }}"
+          export SUPERVISOR_COLLECTOR_DIR="${{ secrets.SUPERVISOR_COLLECTOR_DIR || '/etc/supervisor/include' }}"
+          export YS_APPKEY="${{ secrets.YS_APPKEY || '' }}"
+          export YS_APPSECRET="${{ secrets.YS_APPSECRET || '' }}"
+          export IVM_BASE_URL="${{ secrets.IVM_BASE_URL || 'https://api-ivm.myhuaweicloud.com' }}"
+          export IVM_USER_ID="${{ secrets.IVM_USER_ID || '' }}"
+          export IVM_ACCESS_KEY="${{ secrets.IVM_ACCESS_KEY || '' }}"
+          export IVM_SECRET_KEY="${{ secrets.IVM_SECRET_KEY || '' }}"
+          export OSS_ENDPOINT="${{ secrets.OSS_ENDPOINT || 'oss-cn-shanghai.aliyuncs.com' }}"
+          export OSS_BUCKET_NAME="${{ secrets.OSS_BUCKET_NAME || 'hetu-scada' }}"
+          export OSS_ACCESS_KEY_ID="${{ secrets.OSS_ACCESS_KEY_ID || '' }}"
+          export OSS_ACCESS_KEY_SECRET="${{ secrets.OSS_ACCESS_KEY_SECRET || '' }}"
+          
+          # 从模板生成 .env 文件
+          envsubst < env.template > .env
+          
+          echo "✓ .env 文件已生成"
+
+      - name: Sync files to deployment server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          source: |
+            "docker-compose.prod.yml"
+            "gunicorn_config.py"
+            "deploy/"
+            "scripts/"
+            ".env"
+          target: ${{ secrets.DEPLOY_PATH || '/opt/hetu-backend' }}
+          strip_components: 0
+          rm: false
+
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          port: ${{ secrets.DEPLOY_PORT || 22 }}
+          script: |
+            set -e
+            DEPLOY_PATH="${{ secrets.DEPLOY_PATH || '/opt/hetu-backend' }}"
+            cd "$DEPLOY_PATH"
+            
+            # 确保目录存在
+            mkdir -p "$DEPLOY_PATH"
+            mkdir -p "$DEPLOY_PATH/deploy/alertmanager"
+            mkdir -p "$DEPLOY_PATH/deploy/prometheus"
+            mkdir -p "$DEPLOY_PATH/deploy/supervisor"
+            mkdir -p "$DEPLOY_PATH/scripts"
+            
+            # 检查 .env 文件是否存在
+            if [ ! -f ".env" ]; then
+              echo "错误: .env 文件不存在，请检查文件同步是否成功"
+              exit 1
+            fi
+            echo "✓ .env 文件已同步"
+            
+            # 设置环境变量（从 GitHub Secrets 或使用默认值）
+            export ALERTMANAGER_WEBHOOK_URL="${{ secrets.ALERTMANAGER_WEBHOOK_URL || env.ALERTMANAGER_WEBHOOK_URL }}"
+            export PROMETHEUS_SD_URL="${{ secrets.PROMETHEUS_SD_URL || env.PROMETHEUS_SD_URL }}"
+            export PROMETHEUS_PUSHGATEWAY_TARGET="${{ secrets.PROMETHEUS_PUSHGATEWAY_TARGET || env.PROMETHEUS_PUSHGATEWAY_TARGET }}"
+            export PROMETHEUS_ALERTMANAGER_TARGET="${{ secrets.PROMETHEUS_ALERTMANAGER_TARGET || env.PROMETHEUS_ALERTMANAGER_TARGET }}"
+            
+            echo "使用配置:"
+            echo "  ALERTMANAGER_WEBHOOK_URL=$ALERTMANAGER_WEBHOOK_URL"
+            echo "  PROMETHEUS_SD_URL=$PROMETHEUS_SD_URL"
+            echo "  PROMETHEUS_PUSHGATEWAY_TARGET=$PROMETHEUS_PUSHGATEWAY_TARGET"
+            echo "  PROMETHEUS_ALERTMANAGER_TARGET=$PROMETHEUS_ALERTMANAGER_TARGET"
+            
+            # 生成部署配置文件（从模板生成）
+            if [ -f "scripts/generate-deploy-configs.sh" ]; then
+              chmod +x scripts/generate-deploy-configs.sh
+              # 确保 envsubst 可用
+              if ! command -v envsubst &> /dev/null; then
+                echo "安装 gettext (包含 envsubst)..."
+                apt-get update && apt-get install -y gettext-base || yum install -y gettext || apk add gettext
+              fi
+              ./scripts/generate-deploy-configs.sh
+            else
+              echo "警告: generate-deploy-configs.sh 不存在，使用默认配置"
+              # 回退到旧的复制方式
+              cp deploy/alertmanager/alertmanager.default.yml deploy/alertmanager/alertmanager.yml || true
+              cp deploy/prometheus/prometheus.default.yml deploy/prometheus/prometheus.yml || true
+              cp deploy/supervisor/supervisord.default.conf deploy/supervisor/supervisord.conf || true
+            fi
+            
+            # 登录到容器镜像服务
+            echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login ${{ env.REGISTRY }} -u "${{ secrets.REGISTRY_USERNAME }}" --password-stdin
+            
+            # 拉取新镜像
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag_version.outputs.version }}-base
+            docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.tag_version.outputs.version }}-collector
+            
+            # 设置环境变量
+            export REGISTRY="${{ env.REGISTRY }}"
+            export IMAGE_NAME="${{ env.IMAGE_NAME }}"
+            export HETU_VERSION="${{ steps.tag_version.outputs.version }}"
+            
+            # 更新 docker-compose 服务
+            docker-compose -f docker-compose.prod.yml pull
+            docker-compose -f docker-compose.prod.yml up -d --no-deps api collector
+            
+            # 清理旧镜像（可选，保留最近 3 个版本）
+            docker image prune -f
+            
+            echo "Deployment completed successfully!"
+            echo "Version: ${{ steps.tag_version.outputs.version }}"
+

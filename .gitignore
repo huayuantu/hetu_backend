@@ -273,6 +273,7 @@ dump.rdb
 ### Project template
 deploy/prometheus/include
 deploy/supervisor/include
+# 生成的配置文件不提交（模板文件 *.template 会提交）
 deploy/prometheus/prometheus.yml
 deploy/alertmanager/alertmanager.yml
 deploy/supervisor/supervisord.conf

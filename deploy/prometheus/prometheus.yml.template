@@ -1,0 +1,35 @@
+global:
+  scrape_interval: 15s
+  scrape_timeout: 5s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus' # 监控Prometheus自身的指标
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'grm_module'
+    metrics_path: '/metrics'
+    scheme: 'http'
+    http_sd_configs:
+      - url: '${PROMETHEUS_SD_URL}'
+        refresh_interval: 10s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '(.*):.*'
+        replacement: '$1'
+
+  - job_name: 'grm_local'
+    static_configs:
+      - targets: ['${PROMETHEUS_PUSHGATEWAY_TARGET}']
+    honor_labels: true
+
+alerting:
+  alertmanagers:
+      - static_configs:
+          - targets: ['${PROMETHEUS_ALERTMANAGER_TARGET}']
+
+rule_files:
+  - '/etc/prometheus/include/grm_*.rules'
+

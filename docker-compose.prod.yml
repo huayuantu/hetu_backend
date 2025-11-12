@@ -95,10 +95,8 @@ services:
       - my_network
 
   collector:
-    build:
-      context: .
-      target: collector
-    image: hetu:${HETU_VERSION:-latest}-collector
+    # 如果设置了 REGISTRY 和 IMAGE_NAME，使用远程镜像；否则使用本地构建
+    image: ${REGISTRY:+${REGISTRY}/}${IMAGE_NAME:-hetu}:${HETU_VERSION:-latest}-collector
     command: supervisord -n  -c /etc/supervisor/supervisord.conf
     hostname: hetu-collector
     volumes:
@@ -112,7 +110,7 @@ services:
       - my_network
 
   migrator:
-    image: hetu:${HETU_VERSION:-latest}-base
+    image: ${REGISTRY:+${REGISTRY}/}${IMAGE_NAME:-hetu}:${HETU_VERSION:-latest}-base
     tty: true
     restart: "no"
     env_file:
@@ -130,10 +128,12 @@ services:
       - my_network
 
   api:
-    build:
-      context: .
-      target: base
-    image: hetu:${HETU_VERSION:-latest}-base
+    # 如果设置了 REGISTRY 和 IMAGE_NAME，使用远程镜像；否则使用本地构建
+    image: ${REGISTRY:+${REGISTRY}/}${IMAGE_NAME:-hetu}:${HETU_VERSION:-latest}-base
+    # 本地开发时可以取消注释以下配置进行构建
+    # build:
+    #   context: .
+    #   target: base
     hostname: hetu-api
     tty: true
     command:
