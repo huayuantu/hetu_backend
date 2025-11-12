@@ -217,9 +217,9 @@ jobs:
             export IMAGE_NAME="${{ env.IMAGE_NAME }}"
             export HETU_VERSION="${{ steps.tag_version.outputs.version }}"
             
-            # 更新 docker-compose 服务
-            docker-compose -f docker-compose.prod.yml pull
-            docker-compose -f docker-compose.prod.yml up -d --no-deps api collector
+            # 更新 docker compose 服务（使用 Docker Compose V2）
+            docker compose -f docker-compose.prod.yml pull
+            docker compose -f docker-compose.prod.yml up -d --no-deps api collector
             
             # 清理旧镜像（可选，保留最近 3 个版本）
             docker image prune -f
