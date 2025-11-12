@@ -1,7 +1,7 @@
 version: "3"
 services:
   redis:
-    image: redis:7
+    image: redis
     hostname: hetu-redis
     environment:
       ALLOW_EMPTY_PASSWORD: "yes"
@@ -18,7 +18,7 @@ services:
       - my_network
 
   postgres:
-    image: postgres:13
+    image: postgres
     ports:
       - 5432:5432
     hostname: hetu-db
@@ -36,7 +36,7 @@ services:
       - my_network
 
   prometheus:
-    image: prom/prometheus:v2.45.0
+    image: quay.io/prometheus/prometheus:v2.45.0
     ports:
       - 9090:9090
     hostname: hetu-tsdb
@@ -59,7 +59,7 @@ services:
       - my_network
 
   pushgateway:
-    image: prom/pushgateway:v1.6.2
+    image: quay.io/prometheus/pushgateway:v1.6.2
     ports:
       - 9091:9091
     env_file:
@@ -77,7 +77,7 @@ services:
       - my_network
 
   alertmanager:
-    image: prom/alertmanager:v0.25.1
+    image: quay.io/prometheus/alertmanager:v0.25.1
     ports:
       - 9093:9093
     env_file:
