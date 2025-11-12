@@ -217,10 +217,9 @@ jobs:
             export IMAGE_NAME="${{ env.IMAGE_NAME }}"
             export HETU_VERSION="${{ steps.tag_version.outputs.version }}"
             
-            # 只更新自定义服务（api 和 collector），跳过第三方服务的 pull
-            # 第三方服务（redis, postgres, prometheus 等）如果不存在会自动拉取
-            # 使用 --no-deps 避免拉取依赖服务的镜像
-            docker compose -f docker-compose.prod.yml up -d --no-deps api collector
+            # 启动所有服务（包括依赖服务）
+            # 移除 --no-deps 以确保所有服务都启动
+            docker compose -f docker-compose.prod.yml up -d
             
             # 如果需要确保第三方服务镜像存在，可以单独拉取（可选）
             # docker compose -f docker-compose.prod.yml pull redis postgres prometheus pushgateway alertmanager pgadmin || true

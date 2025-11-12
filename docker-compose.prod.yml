@@ -97,7 +97,7 @@ services:
   collector:
     # 如果设置了 REGISTRY 和 IMAGE_NAME，使用远程镜像；否则使用本地构建
     image: ${REGISTRY:+${REGISTRY}/}${IMAGE_NAME:-hetu}:${HETU_VERSION:-latest}-collector
-    command: uv run supervisord -n  -c /etc/supervisor/supervisord.conf
+    command: python -m uv run supervisord -n -c /etc/supervisor/supervisord.conf
     hostname: hetu-collector
     volumes:
       - ./deploy/supervisor/supervisord.conf:/etc/supervisor/supervisord.conf
@@ -119,8 +119,8 @@ services:
       - bash
       - -c
       - |
-        uv run python manage.py makemigrations
-        uv run python manage.py migrate
+        python -m uv run python manage.py makemigrations
+        python -m uv run python manage.py migrate
     depends_on:
       postgres:
         condition: service_healthy
@@ -137,6 +137,8 @@ services:
     hostname: hetu-api
     tty: true
     command:
+      - python
+      - -m
       - uv
       - run
       - gunicorn
@@ -148,7 +150,7 @@ services:
     ports:
       - 8000:8000
     healthcheck: # 添加健康检查
-      test: uv run python -c 'import requests; assert requests.get("http://localhost:8000/-/healthy").ok==True'
+      test: python -m uv run python -c 'import requests; assert requests.get("http://localhost:8000/-/healthy").ok==True'
       interval: 15s
       timeout: 10s
       retries: 10
@@ -163,16 +165,6 @@ services:
       - ./deploy/supervisor/include:/etc/supervisor/include
       - ./deploy/prometheus/include:/etc/prometheus/include
       - ./deploy/uploads:/etc/api/uploads
-    networks:
-      - my_network
-
-  pgadmin:
-    image: dpage/pgadmin4:5
-    ports:
-      - 5050:80
-    environment:
-      PGADMIN_DEFAULT_EMAIL: tuhuayuan@gmail.com
-      PGADMIN_DEFAULT_PASSWORD: hetu
     networks:
       - my_network
 
