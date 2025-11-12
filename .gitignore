@@ -285,3 +285,9 @@ resource/
 
 # Database files
 *.sql
+
+# GitHub Secrets 配置文件（模板文件会提交）
+github-secrets.sh
+scripts/github-secrets.sh
+github-secrets.conf
+*.secrets.conf

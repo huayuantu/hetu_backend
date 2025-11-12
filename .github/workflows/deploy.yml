@@ -80,6 +80,7 @@ jobs:
           export SECRET_KEY="${{ secrets.SECRET_KEY }}"
           export ALLOWED_HOSTS="${{ secrets.ALLOWED_HOSTS || 'your-domain.com,localhost' }}"
           export UPLOAD_ROOT="${{ secrets.UPLOAD_ROOT || '/etc/api/uploads' }}"
+          export CACHE_URL="${{ secrets.CACHE_URL || 'redis://hetu-redis:6379/0' }}"
           export DATABASE_URL="${{ secrets.DATABASE_URL }}"
           export PROMETHEUS_URL="${{ secrets.PROMETHEUS_URL || 'http://hetu-tsdb:9090' }}"
           export PUSHGATEWAY_URL="${{ secrets.PUSHGATEWAY_URL || 'http://hetu-pushgateway:9091' }}"
