@@ -105,10 +105,39 @@ jobs:
           envsubst < env.template > .env
           
           echo "✓ .env 文件已生成"
-          echo "检查文件是否存在:"
-          ls -la .env docker-compose.prod.yml gunicorn_config.py
-          ls -la deploy/ scripts/ 2>/dev/null || echo "部分目录可能不存在"
+          echo ""
+          echo "检查要同步的文件是否存在:"
+          echo "=== 文件列表 ==="
+          ls -la .env docker-compose.prod.yml gunicorn_config.py 2>&1 || echo "部分文件不存在"
+          echo ""
+          echo "=== 目录列表 ==="
+          ls -la deploy/ scripts/ 2>&1 || echo "部分目录不存在"
+          echo ""
+          echo "=== 验证文件路径 ==="
+          pwd
+          echo "当前目录内容:"
+          ls -la | head -20
 
+      - name: Verify files before sync
+        run: |
+          echo "验证要同步的文件:"
+          for file in docker-compose.prod.yml gunicorn_config.py .env; do
+            if [ -f "$file" ]; then
+              echo "✓ $file 存在"
+            else
+              echo "✗ $file 不存在"
+              exit 1
+            fi
+          done
+          for dir in deploy scripts; do
+            if [ -d "$dir" ]; then
+              echo "✓ $dir/ 目录存在"
+            else
+              echo "✗ $dir/ 目录不存在"
+              exit 1
+            fi
+          done
+      
       - name: Sync files to deployment server
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -116,12 +145,7 @@ jobs:
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
-          source: |
-            docker-compose.prod.yml
-            gunicorn_config.py
-            .env
-            deploy/
-            scripts/
+          source: "docker-compose.prod.yml,gunicorn_config.py,.env,deploy,scripts"
           target: ${{ secrets.DEPLOY_PATH || '/opt/hetu-backend' }}
           strip_components: 0
           rm: false
