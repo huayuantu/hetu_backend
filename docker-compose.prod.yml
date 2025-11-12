@@ -118,9 +118,7 @@ services:
     command:
       - bash
       - -c
-      - |
-        uv run python manage.py makemigrations
-        uv run python manage.py migrate
+      - "uv run python manage.py makemigrations && uv run python manage.py migrate"
     depends_on:
       postgres:
         condition: service_healthy

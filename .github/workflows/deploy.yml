@@ -181,12 +181,14 @@ jobs:
             export PROMETHEUS_SD_URL="${{ secrets.PROMETHEUS_SD_URL || env.PROMETHEUS_SD_URL }}"
             export PROMETHEUS_PUSHGATEWAY_TARGET="${{ secrets.PROMETHEUS_PUSHGATEWAY_TARGET || env.PROMETHEUS_PUSHGATEWAY_TARGET }}"
             export PROMETHEUS_ALERTMANAGER_TARGET="${{ secrets.PROMETHEUS_ALERTMANAGER_TARGET || env.PROMETHEUS_ALERTMANAGER_TARGET }}"
+            export UPLOAD_ROOT="${{ secrets.UPLOAD_ROOT || '/etc/api/uploads' }}"
             
             echo "使用配置:"
             echo "  ALERTMANAGER_WEBHOOK_URL=$ALERTMANAGER_WEBHOOK_URL"
             echo "  PROMETHEUS_SD_URL=$PROMETHEUS_SD_URL"
             echo "  PROMETHEUS_PUSHGATEWAY_TARGET=$PROMETHEUS_PUSHGATEWAY_TARGET"
             echo "  PROMETHEUS_ALERTMANAGER_TARGET=$PROMETHEUS_ALERTMANAGER_TARGET"
+            echo "  UPLOAD_ROOT=$UPLOAD_ROOT"
             
             # 生成部署配置文件（从模板生成）
             if [ -f "scripts/generate-deploy-configs.sh" ]; then
