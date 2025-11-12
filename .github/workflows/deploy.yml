@@ -41,6 +41,7 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ secrets.REGISTRY_USERNAME }}
           password: ${{ secrets.REGISTRY_PASSWORD }}
+        continue-on-error: false
 
       - name: Build and push base image (multi-platform)
         uses: docker/build-push-action@v5
@@ -104,6 +105,9 @@ jobs:
           envsubst < env.template > .env
           
           echo "✓ .env 文件已生成"
+          echo "检查文件是否存在:"
+          ls -la .env docker-compose.prod.yml gunicorn_config.py
+          ls -la deploy/ scripts/ 2>/dev/null || echo "部分目录可能不存在"
 
       - name: Sync files to deployment server
         uses: appleboy/scp-action@v0.1.7
@@ -113,11 +117,11 @@ jobs:
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           port: ${{ secrets.DEPLOY_PORT || 22 }}
           source: |
-            "docker-compose.prod.yml"
-            "gunicorn_config.py"
-            "deploy/"
-            "scripts/"
-            ".env"
+            docker-compose.prod.yml
+            gunicorn_config.py
+            .env
+            deploy/
+            scripts/
           target: ${{ secrets.DEPLOY_PATH || '/opt/hetu-backend' }}
           strip_components: 0
           rm: false
