@@ -1,10 +1,12 @@
-from django.db.models import Q, Count
+from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from ninja import Router
 from ninja.errors import HttpError
 
-from apps.scada.models import Site, SiteStatistic, DashboardCard
+from apps.scada.models import DashboardCard, Site, SiteStatistic
 from apps.scada.schema.site import (
+    DashboardCardIn,
+    DashboardCardOut,
     SiteIn,
     SiteOptionOut,
     SiteOut,
@@ -14,10 +16,7 @@ from apps.scada.schema.site import (
     SiteStatisticOut,
     SiteStatisticValueOut,
     SiteVariableCountOut,
-    DashboardCardIn,
-    DashboardCardOut,
 )
-from apps.scada.utils.promql import promql_query
 from apps.sys.models import User
 from apps.sys.utils import AuthBearer, get_enforcer
 from utils.schema.base import api_schema
@@ -161,24 +160,25 @@ def create_site(request, payload: SiteIn):
 def get_site_option_list(request):
     """选项列表，返回用户有权限的站点及其权限信息"""
     import logging
+
     logger = logging.getLogger(__name__)
-    
+
     enforcer = get_enforcer()
     username = request.auth["username"]
-    
+
     logger.info(f"[站点权限] 用户 {username} 请求站点列表")
-    
+
     # 获取当前用户对所有站点的权限
     policies = [
         policy
         for policy in enforcer.get_filtered_policy(0, username)
         if policy[1].startswith("scada:site:permit:")
     ]
-    
+
     logger.info(f"[站点权限] 用户 {username} 的 Casbin 策略数量: {len(policies)}")
     for policy in policies:
         logger.info(f"[站点权限] 策略: {policy}")
-    
+
     # 构建站点权限映射：site_id -> permission (r 或 w)
     site_permissions: dict[int, str] = {}
     for _, target, permission in policies:
@@ -190,24 +190,26 @@ def get_site_option_list(request):
         elif permission == "r" and site_id not in site_permissions:
             site_permissions[site_id] = "r"
             logger.info(f"[站点权限] 站点 {site_id}: 只读权限 (r)")
-    
+
     # 获取所有站点
     sites = Site.objects.all()
-    
+
     # 构建返回结果，包含权限信息
     result = []
     for site in sites:
         permit = site_permissions.get(site.id, None)
         logger.info(f"[站点权限] 站点 {site.id} ({site.name}): 权限={permit}")
-        result.append(SiteOptionOut(
-            id=site.id,
-            name=site.name,
-            status=site.status,
-            longitude=site.longitude,
-            latitude=site.latitude,
-            permit=permit
-        ))
-    
+        result.append(
+            SiteOptionOut(
+                id=site.id,
+                name=site.name,
+                status=site.status,
+                longitude=site.longitude,
+                latitude=site.latitude,
+                permit=permit,
+            )
+        )
+
     logger.info(f"[站点权限] 用户 {username} 返回 {len(result)} 个站点")
     return result
 
@@ -311,6 +313,7 @@ def delete_site(request, site_id: int):
 @api_schema
 def create_statistic(request, site_id: int, payload: SiteStatisticIn):
     """创建站点统计变量"""
+    from django.core.cache import cache
 
     # Verify site exists
     get_object_or_404(Site, id=site_id)
@@ -320,6 +323,10 @@ def create_statistic(request, site_id: int, payload: SiteStatisticIn):
     statistic.save()
 
     statistic.variables.set(payload.variable_ids)
+
+    # 清除该站点的统计值缓存
+    cache.delete(f"statistic:{site_id}:{statistic.name}")
+    cache.delete(f"statistic:{site_id}:{statistic.id}")
 
     output = SiteStatisticOut.from_orm(statistic)
     output.variable_ids = [v.id for v in statistic.variables.all()]
@@ -341,7 +348,21 @@ def create_statistic(request, site_id: int, payload: SiteStatisticIn):
 def get_statistic_value(
     request, site_id: int, statistic_id: int = None, statistic_name: str = None
 ):
-    """计算统计值并返回"""
+    """计算统计值并返回（已优化：并行查询 + 缓存）"""
+    import concurrent.futures
+    from collections import defaultdict
+
+    from django.core.cache import cache
+
+    from apps.scada.utils.promql import PrometheusQueryError, promql_query
+
+    # 构建缓存键
+    cache_key = f"statistic:{site_id}:{statistic_id or statistic_name}"
+
+    # 尝试从缓存获取
+    cached_result = cache.get(cache_key)
+    if cached_result:
+        return cached_result
 
     if statistic_id:
         statistic = get_object_or_404(SiteStatistic, id=statistic_id, site_id=site_id)
@@ -351,17 +372,19 @@ def get_statistic_value(
         ).first()
         if not statistic:
             # 通过名字找不到统计量就直接返回0
-            return SiteStatisticValueOut(id=-1, name=statistic_name)
+            result = SiteStatisticValueOut(id=-1, name=statistic_name)
+            # 缓存空结果5秒，避免频繁查询
+            cache.set(cache_key, result, timeout=5)
+            return result
     else:
         raise HttpError(400, "指定statistic_id或指定statistic_name")
 
     output = SiteStatisticValueOut.from_orm(statistic)
 
-    # 获取所有变量，按模块分组以进行批量查询
-    variables = statistic.variables.select_related("module").all()
-    
+    # 优化：使用 prefetch_related 预加载 ManyToMany 关系和相关对象
+    variables = statistic.variables.prefetch_related("module").all()
+
     # 按模块分组变量
-    from collections import defaultdict
     module_vars = defaultdict(list)
     for v in variables:
         output.variable_ids.append(v.id)
@@ -370,35 +393,56 @@ def get_statistic_value(
     values = []
     timestamp = 0
 
-    # 按模块批量查询 Prometheus
-    for module_number, vars_list in module_vars.items():
-        # 构建批量查询字符串：使用正则表达式匹配多个变量名
+    # 优化：并行查询 Prometheus（多个模块同时查询）
+    def query_module(module_number: str, vars_list: list):
+        """查询单个模块的变量值"""
         var_names = [v.name for v in vars_list]
-        query_str = "grm_" + module_number + "_gauge"
-        query_str += '{name=~"' + "|".join(var_names) + '"}'
+        query_str = f'grm_{module_number}_gauge{{name=~"{"|".join(var_names)}"}}'
 
         try:
             query_data = promql_query(query_str)
-        except Exception:
-            continue
+            result_dict = {}
+            for result in query_data.get("data", {}).get("result", []):
+                metric_name = result.get("metric", {}).get("name")
+                if metric_name:
+                    result_dict[metric_name] = result.get("value", [0, 0])
 
-        # 从查询结果中提取值
-        result_dict = {}
-        for result in query_data.get("data", {}).get("result", []):
-            metric_name = result.get("metric", {}).get("name")
-            if metric_name:
-                result_dict[metric_name] = result.get("value", [0, 0])
+            # 返回该模块的变量值列表
+            module_values = []
+            module_timestamp = 0
+            for v in vars_list:
+                if v.name in result_dict:
+                    value_data = result_dict[v.name]
+                    module_timestamp = max(module_timestamp, int(value_data[0]))
+                    module_values.append(float(value_data[1]))
 
-        # 匹配变量并累加值
-        for v in vars_list:
-            if v.name in result_dict:
-                value_data = result_dict[v.name]
-                timestamp = max(timestamp, int(value_data[0]))
-                values.append(float(value_data[1]))
+            return module_values, module_timestamp
+        except (PrometheusQueryError, Exception):
+            # 记录错误但不中断其他模块的查询
+            return [], 0
+
+    # 使用线程池并行查询所有模块
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {
+            executor.submit(query_module, module_number, vars_list): module_number
+            for module_number, vars_list in module_vars.items()
+        }
+
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                module_values, module_timestamp = future.result()
+                values.extend(module_values)
+                timestamp = max(timestamp, module_timestamp)
+            except Exception:
+                # 某个模块查询失败，继续处理其他模块
+                continue
 
     # 目前只支持累加
     output.value = sum(values)
     output.timestamp = timestamp
+
+    # 缓存结果30秒
+    cache.set(cache_key, output, timeout=30)
     return output
 
 
@@ -442,13 +486,20 @@ def update_statistic(
     request, site_id: int, statistic_id: int, payload: SiteStatisticIn
 ):
     """更新统计值配置"""
+    from django.core.cache import cache
 
     statistic = get_object_or_404(SiteStatistic, id=statistic_id, site_id=site_id)
+    old_name = statistic.name  # 保存旧名称用于清除缓存
     statistic.name = payload.name
     statistic.method = payload.method
     statistic.save()
 
     statistic.variables.set(payload.variable_ids)
+
+    # 清除该站点的统计值缓存（包括旧名称和新名称）
+    cache.delete(f"statistic:{site_id}:{old_name}")
+    cache.delete(f"statistic:{site_id}:{statistic.name}")
+    cache.delete(f"statistic:{site_id}:{statistic_id}")
 
     output = SiteStatisticOut.from_orm(statistic)
     output.variable_ids = [v.id for v in statistic.variables.all()]
@@ -468,9 +519,15 @@ def update_statistic(
 @api_schema
 def delete_statistic(request, site_id: int, statistic_id: int):
     """删除统计值"""
+    from django.core.cache import cache
 
     statistic = get_object_or_404(SiteStatistic, id=statistic_id, site_id=site_id)
+    statistic_name = statistic.name  # 保存名称用于清除缓存
     statistic.delete()
+
+    # 清除该站点的统计值缓存
+    cache.delete(f"statistic:{site_id}:{statistic_name}")
+    cache.delete(f"statistic:{site_id}:{statistic_id}")
 
     return "Ok"
 
@@ -487,52 +544,47 @@ def delete_statistic(request, site_id: int, statistic_id: int):
 @api_schema
 def get_variables_count(request, site_ids: str = None):
     """批量获取多个站点的变量总数
-    
+
     优化：使用一次查询获取所有站点的变量总数
     site_ids: 逗号分隔的站点ID列表，如 "1,2,3"。如果不提供，返回所有站点
     """
-    from apps.scada.models import Variable
     from collections import defaultdict
-    
+
+    from apps.scada.models import Variable
+
     # 解析站点ID列表
     if site_ids:
-        site_id_list = [int(sid.strip()) for sid in site_ids.split(',') if sid.strip()]
+        site_id_list = [int(sid.strip()) for sid in site_ids.split(",") if sid.strip()]
         if not site_id_list:
             return []
     else:
         # 如果没有提供站点ID，返回所有站点
         site_id_list = None
-    
+
     # 使用一次查询获取所有站点的变量总数
     if site_id_list:
         variable_counts = (
-            Variable.objects
-            .filter(module__site_id__in=site_id_list)
-            .values('module__site_id')
-            .annotate(variable_count=Count('id'))
+            Variable.objects.filter(module__site_id__in=site_id_list)
+            .values("module__site_id")
+            .annotate(variable_count=Count("id"))
         )
     else:
-        variable_counts = (
-            Variable.objects
-            .values('module__site_id')
-            .annotate(variable_count=Count('id'))
+        variable_counts = Variable.objects.values("module__site_id").annotate(
+            variable_count=Count("id")
         )
-    
+
     # 按站点ID汇总
     site_counts = defaultdict(int)
     for item in variable_counts:
-        site_id = item['module__site_id']
-        count = item['variable_count']
+        site_id = item["module__site_id"]
+        count = item["variable_count"]
         site_counts[site_id] += count
-    
+
     # 构建返回结果
     result = []
     for site_id, count in site_counts.items():
-        result.append(SiteVariableCountOut(
-            site_id=site_id,
-            variable_count=count
-        ))
-    
+        result.append(SiteVariableCountOut(site_id=site_id, variable_count=count))
+
     return result
 
 
@@ -551,23 +603,27 @@ def get_dashboard_cards(request, site_id: int):
     """获取站点的 Dashboard 卡片列表"""
     site = get_object_or_404(Site, id=site_id)
     cards = DashboardCard.objects.filter(site=site).order_by("position", "id")
-    
+
     result = []
     for card in cards:
-        result.append(DashboardCardOut(
-            id=card.id,
-            site_id=card.site.id,
-            variable_id=card.variable_id,
-            variable_name=card.variable_name,
-            title=card.title if card.title else card.variable_name,  # 如果没有标题，使用变量名称
-            card_type=card.card_type,
-            config=card.config,
-            position=card.position,
-            layout=card.layout,
-            created_at=card.created_at,
-            updated_at=card.updated_at,
-        ))
-    
+        result.append(
+            DashboardCardOut(
+                id=card.id,
+                site_id=card.site.id,
+                variable_id=card.variable_id,
+                variable_name=card.variable_name,
+                title=card.title
+                if card.title
+                else card.variable_name,  # 如果没有标题，使用变量名称
+                card_type=card.card_type,
+                config=card.config,
+                position=card.position,
+                layout=card.layout,
+                created_at=card.created_at,
+                updated_at=card.updated_at,
+            )
+        )
+
     return result
 
 
@@ -585,10 +641,10 @@ def get_dashboard_cards(request, site_id: int):
 def save_dashboard_cards(request, site_id: int, payload: list[DashboardCardIn]):
     """保存站点的 Dashboard 卡片列表（批量保存/更新）"""
     site = get_object_or_404(Site, id=site_id)
-    
+
     # 删除所有现有卡片
     DashboardCard.objects.filter(site=site).delete()
-    
+
     # 创建新卡片
     cards = []
     for idx, card_data in enumerate(payload):
@@ -602,7 +658,7 @@ def save_dashboard_cards(request, site_id: int, payload: list[DashboardCardIn]):
                 config_dict["precision"] = card_data.config.precision
             if card_data.config.unit:
                 config_dict["unit"] = card_data.config.unit
-        
+
         layout_dict = None
         if card_data.layout:
             layout_dict = {}
@@ -610,34 +666,40 @@ def save_dashboard_cards(request, site_id: int, payload: list[DashboardCardIn]):
                 layout_dict["x"] = card_data.layout.x
             if card_data.layout.y is not None:
                 layout_dict["y"] = card_data.layout.y
-        
+
         card = DashboardCard.objects.create(
             site=site,
             variable_id=card_data.variable_id,
             variable_name=card_data.variable_name,
-            title=card_data.title if card_data.title else card_data.variable_name,  # 如果没有标题，使用变量名称
+            title=card_data.title
+            if card_data.title
+            else card_data.variable_name,  # 如果没有标题，使用变量名称
             card_type=card_data.card_type,
             config=config_dict,
             position=card_data.position if card_data.position is not None else idx,
             layout=layout_dict,
         )
         cards.append(card)
-    
+
     # 返回保存的卡片
     result = []
     for card in cards:
-        result.append(DashboardCardOut(
-            id=card.id,
-            site_id=card.site.id,
-            variable_id=card.variable_id,
-            variable_name=card.variable_name,
-            title=card.title if card.title else card.variable_name,  # 如果没有标题，使用变量名称
-            card_type=card.card_type,
-            config=card.config,
-            position=card.position,
-            layout=card.layout,
-            created_at=card.created_at,
-            updated_at=card.updated_at,
-        ))
-    
+        result.append(
+            DashboardCardOut(
+                id=card.id,
+                site_id=card.site.id,
+                variable_id=card.variable_id,
+                variable_name=card.variable_name,
+                title=card.title
+                if card.title
+                else card.variable_name,  # 如果没有标题，使用变量名称
+                card_type=card.card_type,
+                config=card.config,
+                position=card.position,
+                layout=card.layout,
+                created_at=card.created_at,
+                updated_at=card.updated_at,
+            )
+        )
+
     return result
