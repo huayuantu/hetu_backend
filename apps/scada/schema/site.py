@@ -160,3 +160,12 @@ class DashboardCardOut(Schema):
     layout: dict | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class GlobalStatisticsOut(Schema):
+    """全局统计数据返回结构"""
+    
+    total_site: int  # 接入站点数（过滤掉 connecting 状态的站点）
+    total_variables: int  # 监控点数（所有站点的变量总数）
+    total_water: float  # 处理总量（所有站点的"处理总量"统计值之和）
+    total_warning: int  # 处理预警（激活的告警数 + 总告警数）
