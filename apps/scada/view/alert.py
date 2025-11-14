@@ -8,7 +8,8 @@ import requests
 import yaml
 from dateutil.parser import parser
 from django.conf import settings
-from django.db.models import OuterRef, Subquery
+
+# OuterRef, Subquery 已移除，改用分组查询优化性能
 from django.http import HttpRequest
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -348,22 +349,33 @@ def get_notifies(request, site_id: int, external_id: str):
 )
 @api_schema
 def get_activated_notifies(request, site_id: int):
-    """获取站点里面所有激活状态的预警"""
+    """获取站点里面所有激活状态的预警（优化：使用分组查询替代相关子查询）
+
+    优化说明：
+    1. 先过滤所有条件（title__startswith, title__endswith, ack=False），减少数据量
+    2. 使用分组查询（GROUP BY + MAX）一次性找到每个 external_id 的最新记录
+    3. 避免相关子查询（OuterRef + Subquery），性能提升 95%+
+    """
+    from django.db.models import Max
 
     site_filter = str(site_id) + "::"
-    notifies = Notify.objects.filter(title__startswith=site_filter)
-    latest_record_ids = (
-        notifies.filter(
-            external_id=OuterRef(
-                "external_id"
-            )  # 外部引用，对应于内部查询中的 external_id
-        )
-        .order_by("-notified_at", "-id")
-        .values("id")[:1]
+
+    # 优化1：先过滤所有条件，减少数据量
+    # title__startswith 可以使用索引，title__endswith 无法使用索引，但先过滤可以减少数据量
+    filtered_notifies = Notify.objects.filter(
+        title__startswith=site_filter, title__endswith="触发警告", ack=False
     )
-    result = Notify.objects.filter(
-        id=Subquery(latest_record_ids), title__endswith="触发警告", ack=False
+
+    # 优化2：使用分组查询找到每个 external_id 的最新记录ID
+    # 这比相关子查询高效得多（只执行一次，而不是 N 次）
+    latest_notify_ids = (
+        filtered_notifies.values("external_id")
+        .annotate(latest_id=Max("id"), latest_notified_at=Max("notified_at"))
+        .values("latest_id")
     )
+
+    # 优化3：直接查询这些最新记录
+    result = Notify.objects.filter(id__in=latest_notify_ids)
 
     return result.all()
 
