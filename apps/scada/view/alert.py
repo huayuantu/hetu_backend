@@ -273,18 +273,30 @@ def create_notify(request: HttpRequest):
             # 警告等级按照来源设置
             level = labels["severity"]
         else:
+            # resolved 状态：解除警告
             notified_at = rfc3339_parser.parse(timestr=alert["endsAt"])
             # 标题后缀
             suffix_title = "解除警告"
             # 强制等级为info级别
             level = "info"
-            # pass
 
-        # 重发的消息
+            # 修复：当收到 resolved 状态时，将该 external_id 的所有 "触发警告" 标记为已读，取消激活
+            Notify.objects.filter(
+                external_id=external_id,
+                title__endswith="触发警告",
+                ack=False
+            ).update(
+                ack=True,
+                ack_at=datetime.now(timezone.utc)
+            )
+
+        # 重发的消息处理逻辑（修复：逻辑反了）
+        # 如果是重发的消息（时间更早或相同），且最新记录已确认，跳过（避免重复通知）
         if last_one and notified_at <= last_one.notified_at:
-            if not last_one.ack:
-                # 已经确认了要重新激活
+            if last_one.ack:
+                # 已确认的消息，如果是重发，跳过
                 continue
+            # 如果未确认，继续创建（可能是重复通知，但需要记录）
 
         # 构造title
         title = (
@@ -415,15 +427,21 @@ def get_notify_total(request, site_id: int, ack: bool = None):
 )
 @api_schema
 def ack_notify(request, site_id: int, notify_id: int):
-    """标记已读"""
+    """标记已读（修复：标记该 external_id 的所有 "触发警告" 通知为已读，取消激活）"""
 
     filter_title = str(site_id) + "::"
-    nofity = get_object_or_404(Notify, id=notify_id, title__startswith=filter_title)
+    notify = get_object_or_404(Notify, id=notify_id, title__startswith=filter_title)
 
-    if not nofity.ack:
-        nofity.ack = True
-        nofity.ack_at = datetime.now(timezone.utc)
-        nofity.save()
+    # 修复：将该 external_id 的所有 "触发警告" 通知都标记为已读，取消激活
+    # 这样确保点击已读后，该告警不再显示在激活列表中
+    Notify.objects.filter(
+        external_id=notify.external_id,
+        title__endswith="触发警告",
+        ack=False
+    ).update(
+        ack=True,
+        ack_at=datetime.now(timezone.utc)
+    )
 
     return "Ok"
 
