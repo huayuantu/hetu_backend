@@ -110,23 +110,29 @@ def read_values(
     site_id: int,
     payload: ReadValueIn,
 ):
-    """批量读取变量值"""
-    vars = Variable.objects.filter(id__in=payload.variable_ids, module__site_id=site_id)
+    """批量读取变量值（优化：在内存中分组，避免 N+1 查询）"""
+    # 一次性查询所有变量，使用 select_related 预加载 module
+    vars = Variable.objects.filter(
+        id__in=payload.variable_ids, 
+        module__site_id=site_id
+    ).select_related("module")
 
-    # 获取给定 variable_ids 下每个 module_id 中的变量列表
-    grouped_vars = (
-        vars.select_related("module")
-        .values("module_id", "module__module_number")
-        .distinct()
-    )
+    # 优化：在内存中按模块分组，避免循环中的数据库查询
+    from collections import defaultdict
+    module_vars_map = defaultdict(lambda: {"module_number": None, "vars": []})
+    
+    for v in vars:
+        module_id = v.module_id
+        if module_vars_map[module_id]["module_number"] is None:
+            module_vars_map[module_id]["module_number"] = v.module.module_number
+        module_vars_map[module_id]["vars"].append(v)
 
     outlist: list[ReadValueOut] = []
 
     # 数据是按模块存储，所以变量按模块获取
-    for entry in grouped_vars:
-        module_id = entry["module_id"]
-        module_number = entry["module__module_number"]
-        module_vars = vars.filter(module_id=module_id)
+    for module_id, module_data in module_vars_map.items():
+        module_number = module_data["module_number"]
+        module_vars = module_data["vars"]
 
         query_str = "grm_" + module_number + "_gauge"
         query_str += '{name=~"' + "|".join([v.name for v in module_vars]) + '"}'
@@ -138,8 +144,8 @@ def read_values(
         except requests.RequestException as e:
             raise HttpError(500, f"Request Error: {e}") from e
 
-        # 构建输出结构
-        for v in vars:
+        # 构建输出结构：只处理属于当前模块的变量
+        for v in module_vars:
             out = ReadValueOut.from_orm(v)
             for result in query_data["data"]["result"]:
                 if result["metric"]["name"] == v.name:
@@ -169,30 +175,38 @@ def query_range(
     site_id: int,
     payload: QueryRangeIn,
 ):
-    """批量查询变量历史数据，支持聚合函数"""
+    """批量查询变量历史数据，支持聚合函数（优化：在内存中分组，避免 N+1 查询）"""
     # 验证时间范围
     if payload.start_time >= payload.end_time:
         raise HttpError(400, "start_time must be less than end_time")
 
     # 验证变量是否存在且属于指定站点
-    vars = Variable.objects.filter(id__in=payload.variable_ids, module__site_id=site_id)
-    if vars.count() != len(payload.variable_ids):
+    # 优化：直接查询并转换为列表，避免 count() 查询
+    vars = Variable.objects.filter(
+        id__in=payload.variable_ids, 
+        module__site_id=site_id
+    ).select_related("module")
+    
+    vars_list = list(vars)
+    if len(vars_list) != len(payload.variable_ids):
         raise HttpError(404, "Some variables not found or not belong to this site")
 
-    # 按模块分组变量（因为 Prometheus 指标是按模块存储的）
-    grouped_vars = (
-        vars.select_related("module")
-        .values("module_id", "module__module_number")
-        .distinct()
-    )
+    # 优化：在内存中按模块分组，避免循环中的数据库查询
+    from collections import defaultdict
+    module_vars_map = defaultdict(lambda: {"module_number": None, "vars": []})
+    
+    for v in vars_list:
+        module_id = v.module_id
+        if module_vars_map[module_id]["module_number"] is None:
+            module_vars_map[module_id]["module_number"] = v.module.module_number
+        module_vars_map[module_id]["vars"].append(v)
 
     outlist: list[ReadValueOut] = []
 
     # 数据是按模块存储，所以变量按模块获取
-    for entry in grouped_vars:
-        module_id = entry["module_id"]
-        module_number = entry["module__module_number"]
-        module_vars = vars.filter(module_id=module_id)
+    for module_id, module_data in module_vars_map.items():
+        module_number = module_data["module_number"]
+        module_vars = module_data["vars"]
 
         # 构建基础 PromQL 查询
         base_query = "grm_" + module_number + "_gauge"

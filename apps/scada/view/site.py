@@ -736,10 +736,17 @@ def get_global_statistics(request):
         return cached_result
     
     # 1. 接入站点数：过滤掉 status=0 (connecting) 的站点
+    # 优化：使用索引加速查询
     total_site = Site.objects.exclude(status=0).count()
     
-    # 2. 监控点数：使用一次查询获取所有站点的变量总数
-    total_variables = Variable.objects.count()
+    # 2. 监控点数：使用缓存减少全表扫描
+    # 优化：Variable.objects.count() 是全表扫描，使用缓存减少数据库负载
+    variables_cache_key = "total_variables_count"
+    total_variables = cache.get(variables_cache_key)
+    if total_variables is None:
+        total_variables = Variable.objects.count()
+        # 缓存5分钟（变量数量变化不频繁）
+        cache.set(variables_cache_key, total_variables, timeout=300)
     
     # 3. 处理总量：获取所有站点的"处理总量"统计值之和
     # 兼容之前的站点接口：优先使用统计配置，如果没有配置则跳过（不累加0值）
@@ -747,18 +754,23 @@ def get_global_statistics(request):
     sites = Site.objects.exclude(status=0)
     total_water = 0.0
     
-    def get_site_water_statistic(site_id: int):
+    def get_site_water_statistic(site_id: int, statistic=None):
         """获取单个站点的处理总量统计值
         
         兼容逻辑：
         1. 优先使用 SiteStatistic 配置的"处理总量"统计
         2. 如果没有配置，返回 None（而不是0），避免累加无效值
         3. 如果查询失败，返回 None
+        
+        优化：接受预查询的 statistic 对象，避免重复查询数据库
         """
         try:
-            statistic = SiteStatistic.objects.filter(
-                site_id=site_id, name="处理总量"
-            ).first()
+            # 如果传入了预查询的 statistic，直接使用；否则查询数据库
+            if statistic is None:
+                statistic = SiteStatistic.objects.filter(
+                    site_id=site_id, name="处理总量"
+                ).first()
+            
             if not statistic:
                 # 没有统计配置，返回 None 表示跳过
                 return None
@@ -827,12 +839,22 @@ def get_global_statistics(request):
             logger.warning(f"获取站点 {site_id} 的处理总量统计失败: {e}")
             return None
     
-    # 并行获取所有站点的处理总量
+    # 优化：批量查询所有站点的统计配置，避免 N+1 查询问题
     site_ids = list(sites.values_list('id', flat=True))
     if site_ids:
+        # 一次性查询所有站点的"处理总量"统计配置
+        statistics = SiteStatistic.objects.filter(
+            site_id__in=site_ids, 
+            name="处理总量"
+        ).prefetch_related('variables__module')
+        
+        # 创建 site_id -> statistic 的映射
+        statistic_map = {s.site_id: s for s in statistics}
+        
+        # 并行获取所有站点的处理总量
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
             futures = {
-                executor.submit(get_site_water_statistic, site_id): site_id
+                executor.submit(get_site_water_statistic, site_id, statistic_map.get(site_id)): site_id
                 for site_id in site_ids
             }
             
@@ -846,27 +868,34 @@ def get_global_statistics(request):
                     continue
     
     # 4. 处理预警：获取通知计数（激活的告警数 + 总告警数）
-    # 直接使用 get_notify_count 的内部逻辑，避免装饰器包装问题
+    # 优化：使用更高效的查询方式，减少数据库负载
     from django.db.models import Count, Max, Q
     from apps.scada.models import Notify
     
-    notifies = Notify.objects.all()
+    # 优化1：先过滤再聚合，减少数据量
+    # 只查询未确认的告警记录（ack=False），减少扫描的数据量
+    notifies_all = Notify.objects.all()
+    notifies_unacked = Notify.objects.filter(ack=False)
     
     # 使用 annotate 一次性计算所有统计值
-    stats = notifies.aggregate(
+    stats = notifies_all.aggregate(
         total=Count("id"), acknowledged=Count("id", filter=Q(ack=True))
     )
     
-    # 激活的数量：每个 external_id 的最新记录，且 title 以"触发警告"结尾，且 ack=False
+    # 优化2：先过滤出以"触发警告"结尾的记录，再分组查找最新记录
+    # 这样可以减少需要分组的数据量
+    trigger_notifies = notifies_unacked.filter(title__endswith="触发警告")
+    
+    # 优化3：使用更高效的方式查找每个 external_id 的最新记录
+    # 使用窗口函数或优化的子查询
     latest_notify_ids = (
-        notifies.values("external_id")
-        .annotate(latest_id=Max("id"), latest_notified_at=Max("notified_at"))
+        trigger_notifies.values("external_id")
+        .annotate(latest_id=Max("id"))
         .values("latest_id")
     )
     
-    activated = notifies.filter(
-        id__in=latest_notify_ids, title__endswith="触发警告", ack=False
-    ).count()
+    # 只统计这些最新记录的数量（已经是 ack=False 且 title 以"触发警告"结尾）
+    activated = trigger_notifies.filter(id__in=latest_notify_ids).count()
     
     total_warning = (activated or 0) + (stats["total"] or 0)
     

@@ -165,31 +165,60 @@ def get_exporter_url(process_name: str) -> str:
 def service_discover(request):
     """实现Prometheus的HTTP SD接口
     https://prometheus.io/docs/prometheus/latest/http_sd/
+    
+    优化：添加缓存，减少数据库查询和 RPC 调用频率
     """
+    from django.core.cache import cache
+    
+    # 缓存键
+    cache_key = "prometheus_sd_targets"
+    
+    # 尝试从缓存获取
+    cached_result = cache.get(cache_key)
+    if cached_result is not None:
+        return 200, cached_result
+    
+    # 缓存未命中，查询数据库
     collectors = Collector.objects.all()
     running_list = []
+    
+    # 缓存 supervisor 状态（30秒），减少 RPC 调用
+    supervisor_cache = {}
+    
     for c in collectors:
         process_name = get_proccess_name(c)
 
-        # 获取进程状态
-        try:
-            info = rpc.supervisor.getProcessInfo(process_name)
+        # 获取进程状态（使用缓存）
+        supervisor_cache_key = f"supervisor_status_{process_name}"
+        info = cache.get(supervisor_cache_key)
+        
+        if info is None:
+            try:
+                info = rpc.supervisor.getProcessInfo(process_name)
+                # 缓存 supervisor 状态 30 秒
+                cache.set(supervisor_cache_key, info, timeout=30)
+            except Exception:
+                # 不需要处理错误
+                continue
+        else:
+            # 从缓存获取
+            supervisor_cache[process_name] = info
 
-            if info["statename"] == "RUNNING":  # pyright: ignore
-                # 加入服务发现
-                running_list.append(
-                    {
-                        "targets": [get_exporter_url(process_name)],
-                        "labels": {
-                            "__scrape_interval__": f"{c.interval}s",
-                            "__scrape_timeout__": f"{c.timeout}s",
-                        },
-                    }
-                )
-        except Exception:
-            # 不需要处理错误
-            continue
+        if info["statename"] == "RUNNING":  # pyright: ignore
+            # 加入服务发现
+            running_list.append(
+                {
+                    "targets": [get_exporter_url(process_name)],
+                    "labels": {
+                        "__scrape_interval__": f"{c.interval}s",
+                        "__scrape_timeout__": f"{c.timeout}s",
+                    },
+                }
+            )
 
+    # 缓存结果 30 秒（Prometheus 每 10 秒查询一次，缓存 30 秒可以覆盖 3 次查询）
+    cache.set(cache_key, running_list, timeout=30)
+    
     return 200, running_list
 
 
