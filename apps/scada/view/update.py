@@ -4,7 +4,7 @@ from django.conf import settings
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from ninja import File, Router
+from ninja import Router
 from ninja.errors import HttpError
 from ninja.files import UploadedFile
 from oss2 import Bucket, ProviderAuth
@@ -99,9 +99,14 @@ def check_update(request, version: str, platform: str):
 def create_update(
     request,
     payload: AppUpdateIn,
-    file: UploadedFile | None = File(None),
+    file: UploadedFile | None = None,
 ):
-    """创建应用更新版本（公开接口）"""
+    """创建应用更新版本（公开接口）
+    
+    支持两种请求方式：
+    1. 纯 JSON 请求（application/json）：直接发送 AppUpdateIn 数据，file 参数为 None
+    2. 文件上传请求（multipart/form-data）：包含文件时，Django Ninja 会自动处理
+    """
 
     # 检查版本是否已存在
     if AppUpdate.objects.filter(
