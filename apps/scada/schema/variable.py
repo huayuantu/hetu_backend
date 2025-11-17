@@ -50,6 +50,8 @@ class VariableOptionOut(Schema):
     type: str
     # 变量读写
     rw: bool = False
+    # 变量描述（显示名）
+    details: str = ""
 
 
 class VariableIn(VariableBase):
