@@ -278,12 +278,14 @@ class AppUpdate(models.Model):
 
     def to_tauri_format(self) -> dict:
         """转换为Tauri Updater API格式"""
+        # 确保平台标识符是小写
+        platform_key = self.platform.lower()
         return {
             "version": self.version,
             "notes": self.release_notes,
             "pub_date": self.published_at.isoformat() + "Z",
             "platforms": {
-                self.platform: {
+                platform_key: {
                     "signature": self.signature,
                     "url": self.download_url,
                 }
