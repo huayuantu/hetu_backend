@@ -249,7 +249,7 @@ class AppUpdate(models.Model):
     """应用更新版本模型"""
 
     # 版本号，格式：major.minor.patch (例如: 1.0.0)
-    version = models.CharField(max_length=50, unique=True, db_index=True)
+    version = models.CharField(max_length=50, db_index=True)
     # 平台类型
     platform = models.CharField(max_length=20, choices=PLATFORM_CHOICES, db_index=True)
     # 下载地址（OSS URL或CDN URL）

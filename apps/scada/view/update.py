@@ -107,39 +107,44 @@ def create_update(
     1. 纯 JSON 请求（application/json）：直接发送 AppUpdateIn 数据，file 参数为 None
     2. 文件上传请求（multipart/form-data）：包含文件时，Django Ninja 会自动处理
     """
+    try:
+        # 检查版本是否已存在
+        if AppUpdate.objects.filter(
+            version=payload.version, platform=payload.platform
+        ).exists():
+            raise HttpError(
+                400, f"Version {payload.version} for {payload.platform} already exists"
+            )
 
-    # 检查版本是否已存在
-    if AppUpdate.objects.filter(
-        version=payload.version, platform=payload.platform
-    ).exists():
-        raise HttpError(
-            400, f"Version {payload.version} for {payload.platform} already exists"
-        )
+        # 如果提供了文件，上传到OSS
+        download_url = payload.download_url
+        file_size = payload.file_size
 
-    # 如果提供了文件，上传到OSS
-    download_url = payload.download_url
-    file_size = payload.file_size
+        if file:
+            if file.size and file.size > 500 * 1024 * 1024:  # 500MB限制
+                raise HttpError(400, "File size should not exceed 500MB")
 
-    if file:
-        if file.size and file.size > 500 * 1024 * 1024:  # 500MB限制
-            raise HttpError(400, "File size should not exceed 500MB")
+            # 上传到OSS
+            oss_object_key = f"updates/{payload.platform}/{payload.version}/{file.name}"
+            file_content = file.read()
+            bucket.put_object(oss_object_key, file_content)
 
-        # 上传到OSS
-        oss_object_key = f"updates/{payload.platform}/{payload.version}/{file.name}"
-        file_content = file.read()
-        bucket.put_object(oss_object_key, file_content)
+            download_url = f"https://{oss_bucket_name}.{oss_endpoint}/{oss_object_key}"
+            file_size = file.size
 
-        download_url = f"https://{oss_bucket_name}.{oss_endpoint}/{oss_object_key}"
-        file_size = file.size
+        # 创建更新记录
+        update = AppUpdate(**payload.dict())
+        update.download_url = download_url
+        update.file_size = file_size
+        update.save()
 
-    # 创建更新记录
-    update = AppUpdate(**payload.dict())
-    update.download_url = download_url
-    update.file_size = file_size
-    update.save()
-
-    logger.info(f"创建应用更新: {update.platform} {update.version}")
-    return update
+        logger.info(f"创建应用更新: {update.platform} {update.version}")
+        return update
+    except HttpError:
+        raise
+    except Exception as e:
+        logger.error(f"创建应用更新失败: {e}", exc_info=True)
+        raise HttpError(500, f"Failed to create update: {str(e)}") from e
 
 
 @router.get("/updates", response=list[AppUpdateOut])
