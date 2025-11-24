@@ -35,7 +35,10 @@ from apps.scada.utils.promql import (
     promql_query,
     promql_query_range,
 )
-from apps.sys.utils import AuthBearer
+from apps.sys.utils import (
+    AuthBearer,
+    AuthBearerTokenOrPerm,
+)
 from utils.schema.base import api_schema
 from utils.schema.paginate import api_paginate
 
@@ -113,14 +116,14 @@ def read_values(
     """批量读取变量值（优化：在内存中分组，避免 N+1 查询）"""
     # 一次性查询所有变量，使用 select_related 预加载 module
     vars = Variable.objects.filter(
-        id__in=payload.variable_ids, 
+        id__in=payload.variable_ids,
         module__site_id=site_id
     ).select_related("module")
 
     # 优化：在内存中按模块分组，避免循环中的数据库查询
     from collections import defaultdict
     module_vars_map = defaultdict(lambda: {"module_number": None, "vars": []})
-    
+
     for v in vars:
         module_id = v.module_id
         if module_vars_map[module_id]["module_number"] is None:
@@ -130,10 +133,14 @@ def read_values(
     outlist: list[ReadValueOut] = []
 
     # 数据是按模块存储，所以变量按模块获取
-    for module_id, module_data in module_vars_map.items():
+    for module_data in module_vars_map.values():
         module_number = module_data["module_number"]
         module_vars = module_data["vars"]
 
+        if module_number is None or not module_vars:
+            continue
+
+        assert isinstance(module_number, str), "module_number must be a string"
         query_str = "grm_" + module_number + "_gauge"
         query_str += '{name=~"' + "|".join([v.name for v in module_vars]) + '"}'
 
@@ -145,9 +152,10 @@ def read_values(
             raise HttpError(500, f"Request Error: {e}") from e
 
         # 构建输出结构：只处理属于当前模块的变量
+        result_list = query_data.get("data", {}).get("result", []) if query_data else []
         for v in module_vars:
             out = ReadValueOut.from_orm(v)
-            for result in query_data["data"]["result"]:
+            for result in result_list:
                 if result["metric"]["name"] == v.name:
                     value = ReadValueOut.Value(
                         timestamp=result["value"][0], value=float(result["value"][1])
@@ -183,10 +191,10 @@ def query_range(
     # 验证变量是否存在且属于指定站点
     # 优化：直接查询并转换为列表，避免 count() 查询
     vars = Variable.objects.filter(
-        id__in=payload.variable_ids, 
+        id__in=payload.variable_ids,
         module__site_id=site_id
     ).select_related("module")
-    
+
     vars_list = list(vars)
     if len(vars_list) != len(payload.variable_ids):
         raise HttpError(404, "Some variables not found or not belong to this site")
@@ -194,7 +202,7 @@ def query_range(
     # 优化：在内存中按模块分组，避免循环中的数据库查询
     from collections import defaultdict
     module_vars_map = defaultdict(lambda: {"module_number": None, "vars": []})
-    
+
     for v in vars_list:
         module_id = v.module_id
         if module_vars_map[module_id]["module_number"] is None:
@@ -204,10 +212,14 @@ def query_range(
     outlist: list[ReadValueOut] = []
 
     # 数据是按模块存储，所以变量按模块获取
-    for module_id, module_data in module_vars_map.items():
+    for module_data in module_vars_map.values():
         module_number = module_data["module_number"]
         module_vars = module_data["vars"]
 
+        if module_number is None or not module_vars:
+            continue
+
+        assert isinstance(module_number, str), "module_number must be a string"
         # 构建基础 PromQL 查询
         base_query = "grm_" + module_number + "_gauge"
         base_query += '{name=~"' + "|".join([v.name for v in module_vars]) + '"}'
@@ -242,10 +254,11 @@ def query_range(
             raise HttpError(500, f"Request Error: {e}") from e
 
         # 构建输出结构
+        result_list = result if result else []
         for v in module_vars:
             out = ReadValueOut.from_orm(v)
             # 从 Prometheus 结果中查找匹配的变量
-            for ret in result:
+            for ret in result_list:
                 metric_name = ret.get("metric", {}).get("name")
                 if metric_name == v.name:
                     # 处理 values 数组
@@ -404,12 +417,12 @@ def write_local_var(variable: Variable, payload: WriteValueIn):
 @router.put(
     "/{site_id}/variable/values",
     response=list[WriteValueOut],
-    auth=AuthBearer(
+    auth=AuthBearerTokenOrPerm(
         [
             ("scada:variable:write", "x"),
             ("scada:site:permit:{site_id}", "w"),
         ]
-    ),
+    ),  # OR逻辑：API token认证（服务账号）或用户有写入权限
 )
 @api_schema
 def update_variable_values(
