@@ -463,13 +463,15 @@ def update_variable_values(
                 # 写远程GRM设备
                 client.write(grm_write_list)
                 out.error = grm_write_list[0].write_error
-            except Exception:
+            except Exception as e:
+                logger.exception(f"写远程GRM设备失败: {e}")
                 out.error = 503
         else:
             # 本地pushgateway变量
             try:
                 write_local_var(var, p)
-            except Exception:
+            except Exception as e:
+                logger.exception(f"写本地pushgateway变量失败: {e}")
                 out.error = 503
 
         # 若为脉冲变量且本次写入成功（仅远程变量），则2秒后回落为0
