@@ -2,6 +2,7 @@ from datetime import datetime
 from enum import Enum
 
 from ninja import Schema
+from pydantic import Field
 
 
 class SiteBase(Schema):
@@ -113,30 +114,44 @@ class SitePermit(Schema):
 
 class SiteVariableCountOut(Schema):
     """站点变量计数结构"""
-    
+
     site_id: int
     variable_count: int
 
 
 class DashboardCardConfig(Schema):
-    """Dashboard 卡片配置结构"""
-    
+    """Dashboard 卡片配置结构（输入，使用下划线命名）"""
+
     time_interval: str | None = None  # hour, day, week, month
     aggregation: str | None = None  # avg, min, max, sum
     precision: int | None = None
     unit: str | None = None
+    icon: str | None = None  # 图标名称（lucide-vue-next 图标名称）
+
+
+class DashboardCardConfigOut(Schema):
+    """Dashboard 卡片配置结构（输出，使用驼峰命名）"""
+
+    time_interval: str | None = Field(None, alias="timeInterval")  # hour, day, week, month
+    aggregation: str | None = None  # avg, min, max, sum
+    precision: int | None = None
+    unit: str | None = None
+    icon: str | None = None  # 图标名称（lucide-vue-next 图标名称）
+
+    class Config:
+        populate_by_name = True  # 允许使用字段名或别名
 
 
 class DashboardCardLayout(Schema):
     """Dashboard 卡片布局结构"""
-    
+
     x: int | None = None
     y: int | None = None
 
 
 class DashboardCardIn(Schema):
     """Dashboard 卡片创建/更新结构"""
-    
+
     variable_id: int
     variable_name: str
     title: str = ""  # 卡片标题，默认为空（前端会使用变量名称作为默认值）
@@ -148,14 +163,14 @@ class DashboardCardIn(Schema):
 
 class DashboardCardOut(Schema):
     """Dashboard 卡片返回结构"""
-    
+
     id: int
     site_id: int
     variable_id: int
     variable_name: str
     title: str  # 卡片标题
     card_type: str
-    config: dict
+    config: DashboardCardConfigOut  # 配置信息（包含 icon 字段）
     position: int
     layout: dict | None = None
     created_at: datetime
@@ -164,7 +179,7 @@ class DashboardCardOut(Schema):
 
 class GlobalStatisticsOut(Schema):
     """全局统计数据返回结构"""
-    
+
     total_site: int  # 接入站点数（过滤掉 connecting 状态的站点）
     total_variables: int  # 监控点数（所有站点的变量总数）
     total_water: float  # 处理总量（所有站点的"处理总量"统计值之和）

@@ -1,9 +1,14 @@
-from django.db.models import Count, Q
+import concurrent.futures
+import logging
+from collections import defaultdict
+
+from django.core.cache import cache
+from django.db.models import Count, Max, Q
 from django.shortcuts import get_object_or_404
 from ninja import Router
 from ninja.errors import HttpError
 
-from apps.scada.models import DashboardCard, Site, SiteStatistic
+from apps.scada.models import DashboardCard, Notify, Site, SiteStatistic, Variable
 from apps.scada.schema.site import (
     DashboardCardIn,
     DashboardCardOut,
@@ -18,6 +23,7 @@ from apps.scada.schema.site import (
     SiteStatisticValueOut,
     SiteVariableCountOut,
 )
+from apps.scada.utils.promql import PrometheusQueryError, promql_query
 from apps.sys.models import User
 from apps.sys.utils import AuthBearer, get_enforcer
 from utils.schema.base import api_schema
@@ -160,8 +166,6 @@ def create_site(request, payload: SiteIn):
 @api_schema
 def get_site_option_list(request):
     """选项列表，返回用户有权限的站点及其权限信息"""
-    import logging
-
     logger = logging.getLogger(__name__)
 
     enforcer = get_enforcer()
@@ -314,8 +318,6 @@ def delete_site(request, site_id: int):
 @api_schema
 def create_statistic(request, site_id: int, payload: SiteStatisticIn):
     """创建站点统计变量"""
-    from django.core.cache import cache
-
     # Verify site exists
     get_object_or_404(Site, id=site_id)
     statistic = SiteStatistic(
@@ -350,13 +352,6 @@ def get_statistic_value(
     request, site_id: int, statistic_id: int = None, statistic_name: str = None
 ):
     """计算统计值并返回（已优化：并行查询 + 缓存）"""
-    import concurrent.futures
-    from collections import defaultdict
-
-    from django.core.cache import cache
-
-    from apps.scada.utils.promql import PrometheusQueryError, promql_query
-
     # 构建缓存键
     cache_key = f"statistic:{site_id}:{statistic_id or statistic_name}"
 
@@ -487,8 +482,6 @@ def update_statistic(
     request, site_id: int, statistic_id: int, payload: SiteStatisticIn
 ):
     """更新统计值配置"""
-    from django.core.cache import cache
-
     statistic = get_object_or_404(SiteStatistic, id=statistic_id, site_id=site_id)
     old_name = statistic.name  # 保存旧名称用于清除缓存
     statistic.name = payload.name
@@ -520,8 +513,6 @@ def update_statistic(
 @api_schema
 def delete_statistic(request, site_id: int, statistic_id: int):
     """删除统计值"""
-    from django.core.cache import cache
-
     statistic = get_object_or_404(SiteStatistic, id=statistic_id, site_id=site_id)
     statistic_name = statistic.name  # 保存名称用于清除缓存
     statistic.delete()
@@ -549,10 +540,6 @@ def get_variables_count(request, site_ids: str = None):
     优化：使用一次查询获取所有站点的变量总数
     site_ids: 逗号分隔的站点ID列表，如 "1,2,3"。如果不提供，返回所有站点
     """
-    from collections import defaultdict
-
-    from apps.scada.models import Variable
-
     # 解析站点ID列表
     if site_ids:
         site_id_list = [int(sid.strip()) for sid in site_ids.split(",") if sid.strip()]
@@ -659,6 +646,8 @@ def save_dashboard_cards(request, site_id: int, payload: list[DashboardCardIn]):
                 config_dict["precision"] = card_data.config.precision
             if card_data.config.unit:
                 config_dict["unit"] = card_data.config.unit
+            if card_data.config.icon:
+                config_dict["icon"] = card_data.config.icon
 
         layout_dict = None
         if card_data.layout:
@@ -718,27 +707,19 @@ def save_dashboard_cards(request, site_id: int, payload: list[DashboardCardIn]):
 @api_schema
 def get_global_statistics(request):
     """获取全局统计数据（聚合接口，一次性返回所有统计数据）
-    
+
     优化：使用一次查询获取所有统计数据，避免前端多次请求
     """
-    import concurrent.futures
-    from collections import defaultdict
-    
-    from django.core.cache import cache
-    from django.db.models import Count, Max, Q
-    
-    from apps.scada.models import Variable, Notify
-    
     # 使用缓存，避免频繁查询（缓存30秒）
     cache_key = "global_statistics"
     cached_result = cache.get(cache_key)
     if cached_result:
         return cached_result
-    
+
     # 1. 接入站点数：过滤掉 status=0 (connecting) 的站点
     # 优化：使用索引加速查询
     total_site = Site.objects.exclude(status=0).count()
-    
+
     # 2. 监控点数：使用缓存减少全表扫描
     # 优化：Variable.objects.count() 是全表扫描，使用缓存减少数据库负载
     variables_cache_key = "total_variables_count"
@@ -747,21 +728,21 @@ def get_global_statistics(request):
         total_variables = Variable.objects.count()
         # 缓存5分钟（变量数量变化不频繁）
         cache.set(variables_cache_key, total_variables, timeout=300)
-    
+
     # 3. 处理总量：获取所有站点的"处理总量"统计值之和
     # 兼容之前的站点接口：优先使用统计配置，如果没有配置则跳过（不累加0值）
     # 获取所有非 connecting 状态的站点
     sites = Site.objects.exclude(status=0)
     total_water = 0.0
-    
+
     def get_site_water_statistic(site_id: int, statistic=None):
         """获取单个站点的处理总量统计值
-        
+
         兼容逻辑：
         1. 优先使用 SiteStatistic 配置的"处理总量"统计
         2. 如果没有配置，返回 None（而不是0），避免累加无效值
         3. 如果查询失败，返回 None
-        
+
         优化：接受预查询的 statistic 对象，避免重复查询数据库
         """
         try:
@@ -770,31 +751,29 @@ def get_global_statistics(request):
                 statistic = SiteStatistic.objects.filter(
                     site_id=site_id, name="处理总量"
                 ).first()
-            
+
             if not statistic:
                 # 没有统计配置，返回 None 表示跳过
                 return None
-            
+
             # 使用已有的 get_statistic_value 逻辑，但需要优化
             # 这里直接调用内部逻辑，避免重复的缓存检查
-            from apps.scada.utils.promql import PrometheusQueryError, promql_query
-            
             variables = statistic.variables.prefetch_related("module").all()
             if not variables.exists():
                 # 统计配置存在但没有关联变量，返回 None
                 return None
-            
+
             module_vars = defaultdict(list)
             for v in variables:
                 module_vars[v.module.module_number].append(v)
-            
+
             values = []
-            
+
             def query_module(module_number: str, vars_list: list):
                 """查询单个模块的变量值"""
                 var_names = [v.name for v in vars_list]
                 query_str = f'grm_{module_number}_gauge{{name=~"{"|".join(var_names)}"}}'
-                
+
                 try:
                     query_data = promql_query(query_str)
                     result_dict = {}
@@ -802,62 +781,61 @@ def get_global_statistics(request):
                         metric_name = result.get("metric", {}).get("name")
                         if metric_name:
                             result_dict[metric_name] = result.get("value", [0, 0])
-                    
+
                     module_values = []
                     for v in vars_list:
                         if v.name in result_dict:
                             value_data = result_dict[v.name]
                             module_values.append(float(value_data[1]))
-                    
+
                     return module_values
                 except (PrometheusQueryError, Exception):
                     return []
-            
+
             # 并行查询所有模块
             with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
                 futures = {
                     executor.submit(query_module, module_number, vars_list): module_number
                     for module_number, vars_list in module_vars.items()
                 }
-                
+
                 for future in concurrent.futures.as_completed(futures):
                     try:
                         module_values = future.result()
                         values.extend(module_values)
                     except Exception:
                         continue
-            
+
             # 如果没有任何值，返回 None
             if not values:
                 return None
-            
+
             return sum(values)
         except Exception as e:
             # 记录错误但不中断其他站点的查询
-            import logging
             logger = logging.getLogger(__name__)
             logger.warning(f"获取站点 {site_id} 的处理总量统计失败: {e}")
             return None
-    
+
     # 优化：批量查询所有站点的统计配置，避免 N+1 查询问题
     site_ids = list(sites.values_list('id', flat=True))
     if site_ids:
         # 一次性查询所有站点的"处理总量"统计配置
         statistics = SiteStatistic.objects.filter(
-            site_id__in=site_ids, 
+            site_id__in=site_ids,
             name="处理总量"
         ).prefetch_related('variables__module')
-        
+
         # 创建 site_id -> statistic 的映射
         statistic_map = {s.site_id: s for s in statistics}
-        
+
         # 并行获取所有站点的处理总量
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
             futures = {
                 executor.submit(get_site_water_statistic, site_id, statistic_map.get(site_id)): site_id
                 for site_id in site_ids
             }
-            
+
             for future in concurrent.futures.as_completed(futures):
                 try:
                     result = future.result()
@@ -866,26 +844,24 @@ def get_global_statistics(request):
                         total_water += result
                 except Exception:
                     continue
-    
+
     # 4. 处理预警：获取通知计数（激活的告警数 + 总告警数）
     # 优化：使用更高效的查询方式，减少数据库负载
-    from django.db.models import Count, Max, Q
-    from apps.scada.models import Notify
-    
+
     # 优化1：先过滤再聚合，减少数据量
     # 只查询未确认的告警记录（ack=False），减少扫描的数据量
     notifies_all = Notify.objects.all()
     notifies_unacked = Notify.objects.filter(ack=False)
-    
+
     # 使用 annotate 一次性计算所有统计值
     stats = notifies_all.aggregate(
         total=Count("id"), acknowledged=Count("id", filter=Q(ack=True))
     )
-    
+
     # 优化2：先过滤出以"触发警告"结尾的记录，再分组查找最新记录
     # 这样可以减少需要分组的数据量
     trigger_notifies = notifies_unacked.filter(title__endswith="触发警告")
-    
+
     # 优化3：使用更高效的方式查找每个 external_id 的最新记录
     # 使用窗口函数或优化的子查询
     latest_notify_ids = (
@@ -893,19 +869,19 @@ def get_global_statistics(request):
         .annotate(latest_id=Max("id"))
         .values("latest_id")
     )
-    
+
     # 只统计这些最新记录的数量（已经是 ack=False 且 title 以"触发警告"结尾）
     activated = trigger_notifies.filter(id__in=latest_notify_ids).count()
-    
+
     total_warning = (activated or 0) + (stats["total"] or 0)
-    
+
     result = GlobalStatisticsOut(
         total_site=total_site,
         total_variables=total_variables,
         total_water=total_water,
         total_warning=total_warning
     )
-    
+
     # 缓存结果30秒
     cache.set(cache_key, result, timeout=30)
     return result
