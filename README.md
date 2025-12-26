@@ -46,6 +46,67 @@
 - **Docker Registry** - 容器镜像仓库
 - **自动化部署** - 支持多环境部署
 
+## 🌐 服务架构
+
+```mermaid
+flowchart TB
+    subgraph Cloud["☁️ 云服务"]
+        EZVIZ[萤石云]
+        IVM[华为 IVM]
+        OSS[阿里云 OSS]
+    end
+
+    subgraph Internet["🌐 外网"]
+        CLIENT[SCADA Client]
+        WEB[Web Frontend]
+    end
+
+    subgraph Docker["📦 Docker Compose"]
+        subgraph App["应用层"]
+            API[hetu-api<br/>:8000]
+            COL[hetu-collector<br/>:9001]
+        end
+
+        subgraph Monitor["监控层"]
+            PROM[Prometheus<br/>:9090]
+            PUSH[Pushgateway<br/>:9091]
+            ALERT[Alertmanager<br/>:9093]
+        end
+
+        subgraph Data["数据层"]
+            PG[(PostgreSQL<br/>:5432)]
+            REDIS[(Redis<br/>:6379)]
+        end
+    end
+
+    subgraph Field["🏭 现场设备"]
+        PLC[PLC]
+        SENSOR[传感器]
+    end
+
+    CLIENT --> API
+    WEB --> API
+    API --> EZVIZ & IVM & OSS
+    API <--> COL
+    API --> PG & REDIS
+    COL --> PLC & SENSOR
+    COL --> PUSH
+    PROM --> PUSH
+    PROM --> ALERT
+```
+
+### 📋 服务清单
+
+| 服务 | 端口 | 职责 |
+|------|------|------|
+| **hetu-api** | 8000 | Django REST API |
+| **hetu-collector** | 9001 | 数据采集 (Supervisor) |
+| **hetu-db** | 5432 | PostgreSQL 数据库 |
+| **hetu-redis** | 6379 | 缓存 |
+| **hetu-tsdb** | 9090 | Prometheus 时序数据库 |
+| **hetu-pushgateway** | 9091 | 指标推送网关 |
+| **hetu-alertmanager** | 9093 | 告警管理 |
+
 ## 🚀 快速开始
 
 ### 📋 环境要求

@@ -42,10 +42,12 @@ services:
     hostname: hetu-tsdb
     env_file:
       - ${ENV_FILE:-.env}
-    command: --enable-feature=promql-at-modifier
-      --web.enable-admin-api
-      --web.enable-lifecycle
-      --config.file=/etc/prometheus/prometheus.yml
+    command:
+      - --enable-feature=promql-at-modifier
+      - --web.enable-admin-api
+      - --web.enable-lifecycle
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=${PROMETHEUS_RETENTION_TIME:-15d}
     volumes:
       - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - ./deploy/prometheus/include:/etc/prometheus/include
