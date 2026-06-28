@@ -3,6 +3,7 @@ services:
   redis:
     image: redis
     hostname: hetu-redis
+    restart: unless-stopped
     environment:
       ALLOW_EMPTY_PASSWORD: "yes"
     healthcheck:
@@ -19,6 +20,7 @@ services:
 
   postgres:
     image: postgres
+    restart: unless-stopped
     ports:
       - 5432:5432
     hostname: hetu-db
@@ -37,6 +39,7 @@ services:
 
   prometheus:
     image: quay.io/prometheus/prometheus:v2.45.0
+    restart: unless-stopped
     ports:
       - 9090:9090
     hostname: hetu-tsdb
@@ -62,6 +65,7 @@ services:
 
   pushgateway:
     image: quay.io/prometheus/pushgateway:v1.6.2
+    restart: unless-stopped
     ports:
       - 9091:9091
     env_file:
@@ -80,6 +84,7 @@ services:
 
   alertmanager:
     image: quay.io/prometheus/alertmanager:v0.25.1
+    restart: unless-stopped
     ports:
       - 9093:9093
     env_file:
@@ -99,6 +104,7 @@ services:
   collector:
     # 如果设置了 REGISTRY 和 IMAGE_NAME，使用远程镜像；否则使用本地构建
     image: ${REGISTRY:+${REGISTRY}/}${IMAGE_NAME:-hetu}:${HETU_VERSION:-latest}-collector
+    restart: unless-stopped
     command: uv run supervisord -n -c /etc/supervisor/supervisord.conf
     hostname: hetu-collector
     volumes:
@@ -130,6 +136,7 @@ services:
   api:
     # 如果设置了 REGISTRY 和 IMAGE_NAME，使用远程镜像；否则使用本地构建
     image: ${REGISTRY:+${REGISTRY}/}${IMAGE_NAME:-hetu}:${HETU_VERSION:-latest}-base
+    restart: unless-stopped
     # 本地开发时可以取消注释以下配置进行构建
     # build:
     #   context: .
